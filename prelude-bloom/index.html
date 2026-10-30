@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Prelude, in bloom</title>
+<meta name="description" content="A ball inside thirty-five rings plays Bach's Prelude in C. Every ring it breaks lets its notes go as light, and on the last chord they bloom. Tap for sound.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Prelude, in bloom">
+<meta property="og:description" content="A ball inside thirty-five rings plays Bach's Prelude in C. Every ring it breaks lets its notes go as light, and on the last chord they bloom. Tap for sound.">
+<meta property="og:url" content="https://superdenis777.github.io/prelude-bloom/">
+<meta property="og:image" content="https://superdenis777.github.io/prelude-bloom/preview.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#000000">
+<style>
+  /* Black and white. Nothing else. */
+  :root {
+    --black: #000;
+    --white: #eeebe4;
+    color-scheme: dark;
+  }
+  html, body { height: 100%; background: var(--black); }
+  body { margin: 0; overflow: hidden; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #hint {
+    position: fixed; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom, 0px) + 22px);
+    text-align: center; font: italic 15px/1.2 Georgia, 'Times New Roman', serif; letter-spacing: 0.04em;
+    color: var(--white); opacity: 0; pointer-events: none;
+    animation: hint 9s ease-in-out 2s forwards;
+  }
+  @keyframes hint { 0% { opacity: 0; } 20% { opacity: 0.5; } 75% { opacity: 0.5; } 100% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { #hint { animation: none; opacity: 0.4; } }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="Black, and thirty-five thin white rings, one inside the other, like a record, and nothing but black and white. A small white ball bounces inside the innermost ring, falling and rising, and every time it strikes a ring it plays the next note of Bach's Prelude in C, so the rhythm is the ball's and the notes are Bach's, and how hard it hits is how loud. Each strike leaves a small mark on the ring. Each ring is one bar of the prelude: when its bar has been played, a gap opens in it as it turns, and the ball has to find the gap; when it does, the ring shatters into falling arcs, and the notes it held come loose as points of coloured light, each coloured by its place on the circle of fifths, and drift into the space the ball has opened, gathering on a sunflower's spiral. As the prelude goes on the flower of light grows ring by ring behind the ball, and whenever a note sounds every light of its colour flares, so the flower pulses with the harmony. On the last chord the rest of the record breaks from the inside out, every light opens wide, and rings of colour pulse out from the centre; then it all fades to black, the rings draw themselves again, and the prelude begins a fifth higher, in a new family of colours, never moving the same way twice."></canvas>
+<div id="hint">tap for sound</div>
+
+<script>
+(() => {
+  // The rules:
+  //   1. Black and white, until something breaks.
+  //   2. Only circles and arcs.
+  //   3. Every sound is a collision, and every collision is the next note of Bach's Prelude in C (BWV 846).
+  //   4. The ball doesn't know the music; the music doesn't wait for the ball.
+  //   5. Each ring is a bar. It opens when its bar has been played. When the prelude ends, the last rings break.
+  //   6. What breaks gives off light: the notes a ring held come loose, coloured by where they sit on the
+  //      circle of fifths, and gather where the ball has made room. When the prelude ends, they bloom.
+  const cv = document.getElementById('c');
+  const ctx = cv.getContext('2d');
+  const TAU = Math.PI * 2;
+  const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const sstep = (a, b, x) => { x = clamp((x - a) / (b - a)); return x * x * (3 - 2 * x); };
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const WHITE = '238,235,228';
+
+  // ---------- the music ----------
+  // bars 1 to 32: five notes, played n1 n2 n3 n4 n5 n3 n4 n5, twice; then the two bars before the end, and the last chord
+  const FIVE = [
+    [60, 64, 67, 72, 76], [60, 62, 69, 74, 77], [59, 62, 67, 74, 77], [60, 64, 67, 72, 76], [60, 64, 69, 76, 81], [60, 62, 66, 69, 74], [59, 62, 67, 74, 79], [59, 60, 64, 67, 72],
+    [57, 60, 64, 67, 72], [50, 57, 62, 66, 72], [55, 59, 62, 67, 71], [55, 58, 64, 67, 73], [53, 57, 62, 69, 74], [53, 56, 62, 65, 71], [52, 55, 60, 67, 72], [52, 53, 57, 60, 65],
+    [50, 53, 57, 60, 65], [43, 50, 55, 59, 65], [48, 52, 55, 60, 64], [48, 55, 58, 60, 64], [41, 53, 57, 60, 64], [42, 48, 57, 60, 63], [44, 53, 59, 60, 62], [43, 53, 55, 59, 62],
+    [43, 52, 55, 60, 64], [43, 50, 55, 60, 65], [43, 50, 55, 59, 65], [43, 51, 57, 60, 66], [43, 52, 55, 60, 67], [43, 50, 55, 60, 65], [43, 50, 55, 59, 65], [36, 48, 55, 58, 64],
+  ];
+  const BARS = FIVE.map(f => { const h = [f[0], f[1], f[2], f[3], f[4], f[2], f[3], f[4]]; return h.concat(h).map(m => [m]); });
+  BARS.push([36, 48, 53, 57, 60, 65, 60, 57, 60, 57, 53, 57, 53, 50, 53, 50].map(m => [m]));
+  BARS.push([36, 47, 67, 71, 74, 77, 74, 71, 74, 71, 67, 71, 62, 65, 64, 62].map(m => [m]));
+  BARS.push([[36, 48, 64, 67, 72]]);   // the last bar is one chord, one strike
+  const NB = BARS.length;
+  const fifth = m => (((m % 12) + 12) % 12) * 7 % 12;   // a pitch's place on the circle of fifths: C 0, G 1, D 2 ...
+  // each time round, a fifth higher (or a fourth lower, to stay in reach)
+  const FIFTHS = [0, 7, 2, 9, 4, -1, 6, 1, -4, 3, -2, 5];
+  let round = 0, key = 0, bar = 0, beat = 0, done = false;
+
+  // ---------- the light inside the notes ----------
+  // Each light's colour is its place on the circle of fifths, so the colours are the harmony. They gather on
+  // the spiral a sunflower uses, in the room the ball has opened; when a note sounds, every light of its
+  // colour flares.
+  const GA = Math.PI * (3 - Math.sqrt(5));
+  const hsl = (h, s, l) => { const a = s * Math.min(l, 1 - l), f = n => { const k = (n + h / 30) % 12; return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))); }; return [f(0), f(8), f(4)]; };
+  const HUE = Array.from({ length: 12 }, (_, i) => hsl(i * 30, 0.8, 0.64));
+  const HALO = HUE.map(c => {
+    const k = document.createElement('canvas'); k.width = k.height = 64;
+    const g = k.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, `rgba(${c},0.95)`); gr.addColorStop(0.3, `rgba(${c},0.32)`); gr.addColorStop(1, `rgba(${c},0)`);
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    return k;
+  });
+  const lights = [], glow = new Float32Array(12), blooms = [];
+  let flowerR = 0, bloomRings = [], bloomNext = 0;
+
+  // ---------- the record ----------
+  let W, H, DPR, CX, CY, R, rings = [], cur = 0, shards = [], ripples = [], trail = [];
+  const ball = { x: 0, y: 0, vx: 0, vy: 0, r: 3, on: false };
+  let phase = 'draw', phaseT = 0, T = 0;
+  const stats = { rounds: 0, strikes: 0, escapes: 0, maxLag: 0, lights: 0 };
+  function build() {
+    const r0 = R * 0.075;
+    rings = [];
+    for (let i = 0; i < NB; i++) {
+      const dir = Math.random() < 0.5 ? -1 : 1;
+      rings.push({ r: lerp(r0, R, i / (NB - 1)), rot: rnd(0, TAU), spin: dir * rnd(0.25, 0.9) * (1 - i / NB * 0.5), gapAt: rnd(0, TAU), gap: 0, open: -1, broken: false, marks: [] });
+    }
+    cur = 0; bar = 0; beat = 0; done = false;
+    key = FIFTHS[round % FIFTHS.length];
+    ball.on = false; trail = [];
+  }
+  function layout() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = innerWidth; H = innerHeight;
+    cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+    CX = W / 2; CY = H / 2; R = Math.min(W, H) * 0.46;
+    ball.r = Math.max(2.2, R * 0.011);
+    shards = []; ripples = [];
+    build(); phase = 'draw'; phaseT = T;
+  }
+  // gravity grows with the room the ball has, so it always takes about the same time to fall across it
+  const gravity = () => 20 * rings[cur].r;
+  const speed = () => Math.sqrt(gravity() * rings[cur].r) * 1.55;
+  function drop() {
+    ball.on = true; ball.x = rnd(-0.2, 0.2) * rings[0].r; ball.y = -rings[0].r * 0.3;
+    const a = rnd(0, TAU), v = speed() * 0.5; ball.vx = Math.cos(a) * v; ball.vy = Math.sin(a) * v;
+  }
+  // is this angle in the ring's open gap?
+  function inGap(rg, ang) {
+    if (rg.gap <= 0) return false;
+    let d = (ang - (rg.gapAt + rg.rot)) % TAU; if (d < -Math.PI) d += TAU; if (d > Math.PI) d -= TAU;
+    return Math.abs(d) < rg.gap / 2 - ball.r / rg.r;
+  }
+  function strike(rg, nx, ny, vn) {
+    // the next note, as loud as the ball hit
+    const notes = BARS[bar][beat], vel = clamp(vn / speed(), 0.25, 1);
+    play(notes.map(m => m + key), vel, clamp(nx, -0.8, 0.8));
+    for (const m of notes) glow[fifth(m + key)] = Math.max(glow[fifth(m + key)], 0.5 + 0.5 * vel);
+    const ang = Math.atan2(ny, nx);
+    rg.marks.push({ a: ang - rg.rot, s: vel, t: T, h: fifth(notes[0] + key) });
+    ripples.push({ x: CX + nx * rg.r, y: CY + ny * rg.r, t: T, s: vel });
+    stats.strikes++;
+    beat++;
+    if (beat >= BARS[bar].length) {
+      rings[bar].open = T;   // this bar is played: its ring can open
+      beat = 0; bar++;
+      if (bar >= NB) finale();
+    }
+    stats.maxLag = Math.max(stats.maxLag, bar - cur);
+  }
+  function shatter(rg, outward) {
+    rg.broken = true;
+    // the notes it held come loose as light
+    for (const m of rg.marks) { const a = m.a + rg.rot, x = Math.cos(a) * rg.r, y = Math.sin(a) * rg.r; lights.push({ x, y, x0: x, y0: y, h: m.h, s: m.s, n: lights.length, t0: T }); }
+    rg.marks = [];
+    const n = Math.max(6, Math.round(rg.r / (R * 0.06))), g0 = rg.gapAt + rg.rot + rg.gap / 2, span = TAU - Math.max(0, rg.gap);
+    for (let i = 0; i < n; i++) {
+      const a0 = g0 + span * i / n, a1 = g0 + span * (i + 1) / n - 0.02, mid = (a0 + a1) / 2, v = rnd(0.2, 0.6) * R * (outward || 0.35);
+      shards.push({ r: rg.r, a0, a1, x: 0, y: 0, vx: Math.cos(mid) * v, vy: Math.sin(mid) * v - rnd(0, 0.2) * R, rot: 0, vr: rnd(-1.5, 1.5), t: T, marks: [] });
+    }
+  }
+  // the last chord: what's left of the record breaks from the inside out, and everything that was let go blooms
+  function finale() {
+    done = true; ball.on = false;
+    bloomRings = rings.filter(rg => !rg.broken); bloomNext = 0;
+    phase = 'bloom'; phaseT = T;
+  }
+
+  function update(dt) {
+    T += dt;
+    for (const rg of rings) {
+      rg.rot += rg.spin * dt;
+      if (rg.open >= 0) rg.gap = lerp(0, 0.95, sstep(rg.open, rg.open + 1.6, T));
+    }
+    if (phase === 'draw' && T - phaseT > NB * 0.09 + 1.2) { phase = 'play'; phaseT = T; drop(); }
+    if (phase === 'bloom') {
+      const t = T - phaseT;
+      while (bloomNext < bloomRings.length && t > bloomNext * 0.07) shatter(bloomRings[bloomNext++], 0.5);
+      if (t < 7 && (!blooms.length || T - blooms[blooms.length - 1].t > 0.55)) blooms.push({ t: T, h: (fifth(key) + blooms.length * 7) % 12 });
+      if (t > 16) { round++; stats.rounds++; lights.length = 0; blooms.length = 0; flowerR = 0; build(); phase = 'draw'; phaseT = T; }
+    }
+    // the lights find their places
+    const N = lights.length, target = phase === 'bloom' ? R * 0.98 : ball.on ? rings[cur].r * 0.9 : flowerR;
+    flowerR = lerp(flowerR, target, clamp(dt * 0.9));
+    const spin = T * 0.035;
+    for (const l of lights) {
+      const rr = flowerR * Math.sqrt((l.n + 0.5) / Math.max(1, N)), a = l.n * GA + spin, tx = Math.cos(a) * rr, ty = Math.sin(a) * rr, u = T - l.t0;
+      if (u < 2.4) { const e = sstep(0, 2.4, u), sw = Math.sin(e * Math.PI) * 0.35; l.x = lerp(l.x0, tx, e) - (ty - l.y0) * sw * 0.3; l.y = lerp(l.y0, ty, e) + (tx - l.x0) * sw * 0.3; }
+      else { l.x = lerp(l.x, tx, clamp(dt * 2)); l.y = lerp(l.y, ty, clamp(dt * 2)); }
+    }
+    for (let i = 0; i < 12; i++) glow[i] *= Math.exp(-dt * 2.4);
+    stats.lights = N;
+    if (ball.on) {
+      const n = 10, h = dt / n;
+      for (let s = 0; s < n; s++) {
+        ball.vy += gravity() * h;
+        ball.x += ball.vx * h; ball.y += ball.vy * h;
+        const rg = rings[cur], d = Math.hypot(ball.x, ball.y);
+        if (d + ball.r < rg.r) continue;
+        const nx = ball.x / d, ny = ball.y / d;
+        if (inGap(rg, Math.atan2(ny, nx))) {
+          if (d - ball.r > rg.r) {   // through: the ring breaks, and the next one is the wall
+            shatter(rg); stats.escapes++;
+            cur = Math.min(NB - 1, cur + 1);
+          }
+          continue;
+        }
+        const vn = ball.vx * nx + ball.vy * ny;
+        if (vn > 0) {
+          ball.vx -= 2 * vn * nx; ball.vy -= 2 * vn * ny;
+          // a small turn so it never settles into the same path, and the same energy every time
+          const j = rnd(-0.06, 0.06), c = Math.cos(j), sn = Math.sin(j), vx = ball.vx * c - ball.vy * sn, vy = ball.vx * sn + ball.vy * c, v = Math.hypot(vx, vy) || 1, tv = speed();
+          ball.vx = vx / v * tv; ball.vy = vy / v * tv;
+          strike(rg, nx, ny, vn);
+          if (!ball.on) break;
+        }
+        ball.x = nx * (rg.r - ball.r); ball.y = ny * (rg.r - ball.r);
+      }
+      trail.push([ball.x, ball.y, T]);
+    }
+    while (trail.length && T - trail[0][2] > 0.45) trail.shift();
+    for (let i = shards.length - 1; i >= 0; i--) {
+      const s = shards[i];
+      s.vy += R * 0.9 * dt; s.x += s.vx * dt; s.y += s.vy * dt; s.rot += s.vr * dt;
+      if (T - s.t > 3.2) shards.splice(i, 1);
+    }
+    for (let i = ripples.length - 1; i >= 0; i--) if (T - ripples[i].t > 0.9) ripples.splice(i, 1);
+  }
+
+  function draw() {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.lineCap = 'round';
+    const lw = Math.max(0.6, 1 / DPR * 1.2);
+    // the lights, and at the end the bloom
+    if (lights.length || blooms.length) {
+      const bt = phase === 'bloom' ? T - phaseT : 0, bloom = phase === 'bloom' ? sstep(0.3, 3, bt) : 0, fade = phase === 'bloom' ? 1 - sstep(10, 15.5, bt) : 1, HS = Math.max(1, R / 330);
+      ctx.globalCompositeOperation = 'lighter';
+      for (const b of blooms) {
+        const u = (T - b.t) / 3.4;
+        if (u > 1) continue;
+        ctx.strokeStyle = `rgba(${HUE[b.h]},${0.5 * (1 - u) * fade})`; ctx.lineWidth = (1 + 2 * (1 - u)) * HS;
+        ctx.beginPath(); ctx.arc(CX, CY, u * R * 1.35, 0, TAU); ctx.stroke();
+      }
+      for (const l of lights) {
+        const g = glow[l.h], on = sstep(0, 0.6, T - l.t0), b = (0.3 + 0.7 * g + 0.5 * bloom) * fade * on;
+        if (b < 0.01) continue;
+        const hs = (5 + 7 * g + 16 * bloom) * HS;
+        ctx.globalAlpha = Math.min(1, b * 0.6); ctx.drawImage(HALO[l.h], CX + l.x - hs, CY + l.y - hs, hs * 2, hs * 2);
+        ctx.globalAlpha = Math.min(1, b + 0.15); ctx.fillStyle = `rgb(${HUE[l.h]})`;
+        ctx.beginPath(); ctx.arc(CX + l.x, CY + l.y, (1.1 + 0.7 * l.s + 3.2 * bloom) * HS, 0, TAU); ctx.fill();
+      }
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+    }
+    // the rings, drawing themselves at the start of each round
+    rings.forEach((rg, i) => {
+      if (rg.broken) return;
+      const drawn = phase === 'draw' ? sstep(i * 0.09, i * 0.09 + 0.8, T - phaseT) : 1;
+      if (drawn <= 0) return;
+      const near = i === cur && ball.on;
+      ctx.strokeStyle = `rgba(${WHITE},${near ? 0.95 : 0.55 - 0.2 * (i - cur) / NB})`; ctx.lineWidth = near ? lw * 1.6 : lw;
+      ctx.beginPath();
+      if (rg.gap > 0.001) ctx.arc(CX, CY, rg.r, rg.gapAt + rg.rot + rg.gap / 2, rg.gapAt + rg.rot - rg.gap / 2 + TAU);
+      else ctx.arc(CX, CY, rg.r, rg.rot, rg.rot + TAU * drawn);
+      ctx.stroke();
+      // the marks its notes left
+      ctx.fillStyle = `rgba(${WHITE},0.9)`;
+      for (const m of rg.marks) { const a = m.a + rg.rot, s = 0.9 + m.s * 1.4; ctx.beginPath(); ctx.arc(CX + Math.cos(a) * rg.r, CY + Math.sin(a) * rg.r, s, 0, TAU); ctx.fill(); }
+    });
+    // the broken ones, falling away
+    for (const s of shards) {
+      const a = 1 - clamp((T - s.t) / 3.2);
+      ctx.strokeStyle = `rgba(${WHITE},${0.85 * a})`; ctx.lineWidth = lw * 1.3;
+      ctx.beginPath(); ctx.arc(CX + s.x, CY + s.y, s.r, s.a0 + s.rot, s.a1 + s.rot); ctx.stroke();
+      ctx.fillStyle = `rgba(${WHITE},${a})`;
+      for (const m of s.marks) { const mm = m + s.rot; ctx.beginPath(); ctx.arc(CX + s.x + Math.cos(mm) * s.r, CY + s.y + Math.sin(mm) * s.r, 1.4, 0, TAU); ctx.fill(); }
+    }
+    // where it struck
+    for (const r of ripples) { const u = (T - r.t) / 0.9; ctx.strokeStyle = `rgba(${WHITE},${0.6 * (1 - u) * r.s})`; ctx.lineWidth = lw; ctx.beginPath(); ctx.arc(r.x, r.y, 2 + u * R * 0.06 * (0.5 + r.s), 0, TAU); ctx.stroke(); }
+    // the ball, and the path it has just taken
+    if (trail.length > 1) {
+      for (let i = 1; i < trail.length; i++) {
+        const a = 1 - (T - trail[i][2]) / 0.45;
+        ctx.strokeStyle = `rgba(${WHITE},${0.5 * a})`; ctx.lineWidth = ball.r * 0.6 * a + 0.3;
+        ctx.beginPath(); ctx.moveTo(CX + trail[i - 1][0], CY + trail[i - 1][1]); ctx.lineTo(CX + trail[i][0], CY + trail[i][1]); ctx.stroke();
+      }
+    }
+    if (ball.on) { ctx.fillStyle = `rgb(${WHITE})`; ctx.beginPath(); ctx.arc(CX + ball.x, CY + ball.y, ball.r, 0, TAU); ctx.fill(); }
+  }
+
+  // ---------- the sound: a soft piano, struck ----------
+  let AC = null, master, verb, soundOn = false;
+  function initAudio() {
+    AC = new (window.AudioContext || window.webkitAudioContext)();
+    master = AC.createGain(); master.gain.value = 0;
+    const comp = AC.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 3;
+    master.connect(comp); comp.connect(AC.destination);
+    const sr = AC.sampleRate, len = Math.floor(sr * 3.2), ir = AC.createBuffer(2, len, sr);
+    for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6); }
+    verb = AC.createConvolver(); verb.buffer = ir;
+    const vg = AC.createGain(); vg.gain.value = 0.32; verb.connect(vg); vg.connect(master);
+  }
+  function play(ms, vel, pan) {
+    if (!AC || !soundOn) return;
+    const t = AC.currentTime + 0.005;
+    const out = AC.createGain(); out.gain.value = vel * (ms.length > 1 ? 0.7 : 1);
+    let o = out;
+    if (AC.createStereoPanner) { const p = AC.createStereoPanner(); p.pan.value = pan * 0.7; out.connect(p); o = p; }
+    o.connect(master); o.connect(verb);
+    for (const m of ms) {
+      const f = 440 * Math.pow(2, (m - 69) / 12), dec = clamp(6 - (m - 36) * 0.09, 1.1, 6);
+      for (const [k, a] of [[1, 1], [2, 0.42], [3, 0.16], [4, 0.07]]) {
+        const osc = AC.createOscillator(), g = AC.createGain();
+        osc.frequency.value = f * k * (1 + 0.0004 * k * k);
+        g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.07 * a * (0.6 + 0.4 * vel), t + 0.003);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + dec / Math.pow(k, 0.7));
+        osc.connect(g); g.connect(out); osc.start(t); osc.stop(t + dec + 0.1);
+      }
+    }
+  }
+  addEventListener('pointerdown', () => {
+    if (!AC) initAudio();
+    if (AC.state === 'suspended') AC.resume();
+    soundOn = !soundOn;
+    master.gain.setTargetAtTime(soundOn ? 0.9 : 0, AC.currentTime, 0.3);
+    document.getElementById('hint').hidden = true;
+  });
+
+  let last = performance.now();
+  function frame(now) {
+    const dt = clamp((now - last) / 1000, 0, 0.05);
+    last = now;
+    update(dt);
+    draw();
+    requestAnimationFrame(frame);
+  }
+  addEventListener('resize', layout);
+  layout();
+  window.__prelude = () => ({ T: +T.toFixed(1), phase, round, key, bar, beat, ring: cur, ...stats });
+  try { navigator.wakeLock?.request('screen').catch(() => {}); } catch (e) {}
+  requestAnimationFrame(frame);
+})();
+</script>
+
+</body>
+</html>
