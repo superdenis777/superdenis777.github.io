@@ -1,0 +1,1060 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Für Elise</title>
+<meta name="description" content="Every night at 8 a Taipei lane runs out in slippers when the garbage truck plays Für Elise. Tap for sound.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Für Elise · Taipei, 8 PM">
+<meta property="og:description" content="Every night at 8 a Taipei lane runs out in slippers when the garbage truck plays Für Elise. Tap for sound.">
+<meta property="og:url" content="https://superdenis777.github.io/fur-elise/">
+<meta property="og:image" content="https://superdenis777.github.io/fur-elise/preview.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#0b1026">
+<style>
+  /* One lane in Taipei at 8 PM, side on. One dark theme: it's night. */
+  :root { --night: #0b1026; --ink: #f4ead8; color-scheme: dark; }
+  html, body { height: 100%; background: var(--night); }
+  body { margin: 0; overflow: hidden; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  #safe { position: fixed; top: 0; left: 0; padding-top: env(safe-area-inset-top, 0px); visibility: hidden; pointer-events: none; }
+  #hint {
+    position: fixed; left: 0; right: 0; top: calc(env(safe-area-inset-top, 0px) + 18px);
+    text-align: center; font: italic 15px/1.2 Georgia, 'Times New Roman', serif; letter-spacing: 0.04em;
+    color: var(--ink); opacity: 0; pointer-events: none;
+    animation: hint 7s ease-in-out 1s forwards;
+  }
+  @keyframes hint { 0% { opacity: 0; } 20% { opacity: 0.7; } 75% { opacity: 0.7; } 100% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { #hint { animation: none; opacity: 0.5; } }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="One lane in Taipei at eight in the evening, seen side on: old five-storey apartment buildings with iron window cages, air conditioners, potted plants and laundry, lit shop signs, a convenience store, scooters parked under the arcade, cables strung across, and Taipei 101 far off over the hills in the colour of the day. Faintly, from far away, a garbage truck starts playing Für Elise. Windows light up one after another, shadows dash past them, iron doors bang open and the neighbours run out in slippers with their bags: a grandmother who has been waiting at the curb since before the music started, an uncle in a tank top, a man in a towel with shampoo still in his hair, a woman in a face mask, a kid with a tiny bag, a student on his phone, the convenience store clerk with two big bags. They line up where the truck always stops, and every bag lands in the truck on the downbeat. The truck leaves and somebody always comes running too late. The recycling truck comes after. Everyone goes back in and the lights go off. Each night is a new day of the week: no truck on Wednesdays and Sundays, when the new foreigner comes out anyway and the grandmother waves him back in from her window, sometimes rain, sometimes a typhoon. And night by night, two neighbours who only ever meet at the garbage truck fall in love."></canvas>
+<div id="safe"></div>
+<div id="hint">tap for sound</div>
+
+<script>
+(() => {
+  // Rules. 1. One lane, one fixed frame. 2. The truck plays Für Elise and the music never waits.
+  // 3. Every bag lands in the truck on a beat. 4. The same people live here every night; they change slowly.
+  // 5. No words but the day, and the signs on the street. 6. No voices.
+  const cv = document.getElementById('c');
+  const ctx = cv.getContext('2d');
+  const TAU = Math.PI * 2;
+  const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const sstep = (a, b, x) => { x = clamp((x - a) / (b - a)); return x * x * (3 - 2 * x); };
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+  const chance = p => Math.random() < p;
+  const weighted = list => { let s = 0; for (const o of list) s += o[1]; let r = Math.random() * s; for (const o of list) if ((r -= o[1]) < 0) return o[0]; return list[list.length - 1][0]; };
+  const FACE = '"Helvetica Neue", Arial, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif';
+  const SERIF = 'Georgia, "Times New Roman", "Songti TC", serif';
+
+  // ---------- the lane ----------
+  let W, H, DPR, SAFE_T = 0, FH, PH, SH, yG, yS, yQ, yW, BW, TL, TH, WR, facade;
+  let blds = [], units = [], cables = [], lampX = 0, x101 = 0;
+  const WALLS = ['#4a4741', '#54453c', '#43504a', '#5a5248', '#4a3e44', '#3e4652', '#57504a'];
+  const CAGES = ['#c9c6bc', '#b8b4a8', '#8a5a3a', '#5a7a62', '#9aa0a6'];
+  const SIGNS = [['早餐', '#e0602a'], ['水電行', '#2a7ac8'], ['藥局', '#2a9a52'], ['洗衣', '#2aa0c0'], ['理髮', '#c83040'], ['麵店', '#d8902a'], ['五金', '#8a6a2a'], ['機車行', '#3a5ab0'], ['文具', '#b04a9a'], ['自助餐', '#d0502a'], ['中醫診所', '#2a8a7a'], ['補習班', '#c8302a']];
+  const SHOP_KINDS = ['shutter', 'shutter', 'scooters', 'shutter'];
+  function lane() {
+    FH = clamp(Math.min(H * 0.105, W * 0.24), 56, 118);
+    PH = FH * 0.6; SH = Math.max(H * 0.16, FH * 1.35);
+    yG = H - SH; yS = yG - FH * 0.05; yQ = yG + SH * 0.22; yW = yG + SH * 0.76;
+    BW = clamp(W / 3.1, FH * 1.5, FH * 2.4);
+    TL = clamp(W * 0.5, FH * 2.4, FH * 3.6); TH = PH * 1.7; WR = TH * 0.17;
+    blds = []; units = []; cables = [];
+    const deck = [...SIGNS].sort(() => Math.random() - 0.5);
+    let x = -rnd(0.1, 0.35) * BW;
+    while (x < W) {
+      const w = BW * rnd(0.9, 1.1), gf = FH * 1.15;
+      const b = { x, w, gf, top: yG - gf - FH * 4, wall: pick(WALLS), stains: Array.from({ length: 5 }, () => [rnd(0.05, 0.95), rnd(0.3, 1), rnd(1, 3)]),
+        doorLeft: chance(0.5), shop: pick(SHOP_KINDS), sign: deck[blds.length % deck.length], tank: chance(0.7), shed: chance(0.45), shedLit: chance(0.4), vsign: chance(0.3) ? deck[(blds.length + 5) % deck.length] : null,
+        scooters: Array.from({ length: 2 + Math.floor(rnd(0, 3)) }, () => [rnd(0, 1), pick(['#c9c5bd', '#8a2e2e', '#2e4f8a', '#2a2a30', '#b08a3a', '#7a9a8a', '#d8d8d8'])]) };
+      const dw = w * 0.22;
+      b.door = { x: x + (b.doorLeft ? w * 0.1 : w * 0.66), w: dw, h: gf * 0.72, open: 0, b };
+      b.door.cx = b.door.x + dw / 2;
+      for (let f = 1; f <= 4; f++) for (const side of [0, 1]) {
+        const ww = w * 0.3, wh = FH * 0.46, wx = x + (side ? w * 0.6 : w * 0.1), wy = yG - gf - f * FH + FH * 0.2;
+        units.push({ b, f, side, x: wx, y: wy, w: ww, h: wh, cage: pick(CAGES), ac: chance(0.75) ? (chance(0.5) ? 'side' : 'below') : null, laundry: chance(0.3), plants: Math.floor(rnd(0, 4)),
+          tone: weighted([['warm', 3], ['cool', 2], ['tv', 1]]), light: 0, lightTo: chance(0.25) ? 1 : 0, dash: -9, folk: null, wave: -9, lean: null });
+      }
+      blds.push(b);
+      x += w;
+    }
+    // the store goes on a building whose door is on the other side
+    const sb = blds.filter(b => b.x > -b.w * 0.3 && b.x + b.w < W + b.w * 0.3);
+    const storeB = pick(sb.length ? sb : blds);
+    storeB.shop = 'store';
+    for (let k = 0; k < 9; k++) { const x1 = rnd(-20, W), x2 = x1 + rnd(W * 0.3, W * 0.9); cables.push([x1, yG - FH * 1.15 - rnd(-FH * 0.1, FH * 1.6), x2, yG - FH * 1.15 - rnd(-FH * 0.1, FH * 1.6), rnd(FH * 0.1, FH * 0.45)]); }
+    lampX = W * rnd(0.78, 0.9); x101 = W * rnd(0.55, 0.8);
+  }
+  const shade = (hex, k) => { const n = parseInt(hex.slice(1), 16); const r = (n >> 16) * k, g = ((n >> 8) & 255) * k, b = (n & 255) * k; return `rgb(${clamp(r, 0, 255) | 0},${clamp(g, 0, 255) | 0},${clamp(b, 0, 255) | 0})`; };
+  function rr(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+  const C101 = ['#a060e0', '#e84040', '#f0902a', '#f0d03a', '#3ac070', '#3a8af0', '#6a5ae0'];
+  function paintFacade() {
+    facade = document.createElement('canvas'); facade.width = cv.width; facade.height = cv.height;
+    const g = facade.getContext('2d'); g.setTransform(DPR, 0, 0, DPR, 0, 0);
+    // sky, hills, and the tower in the colour of the day
+    const top = Math.min(...blds.map(b => b.top)) - FH * 0.6;
+    const sky = g.createLinearGradient(0, 0, 0, yG); sky.addColorStop(0, '#080c22'); sky.addColorStop(0.6, '#161b3c'); sky.addColorStop(1, '#3a2d48');
+    g.fillStyle = sky; g.fillRect(0, 0, W, yG);
+    const hill = (y0, amp, col, seed) => { g.fillStyle = col; g.beginPath(); g.moveTo(0, yG); for (let x = 0; x <= W; x += 6) g.lineTo(x, y0 - amp * (0.5 + 0.3 * Math.sin(x / W * 5 + seed) + 0.2 * Math.sin(x / W * 13 + seed * 2))); g.lineTo(W, yG); g.closePath(); g.fill(); };
+    const hy = top + FH * 0.2;
+    hill(hy, FH * 1.4, '#1a1d3a', 1);
+    // 101: eight stacked tiers and a spire
+    const tw = FH * 0.2, tierH = FH * 0.115, base = hy - FH * 0.35, col = C101[weekday];
+    g.fillStyle = '#20243e'; g.fillRect(x101 - tw * 0.7, base, tw * 1.4, FH);
+    for (let k = 0; k < 8; k++) {
+      const y = base - (k + 1) * tierH;
+      g.fillStyle = '#262a48'; g.beginPath(); g.moveTo(x101 - tw * 0.5, y + tierH); g.lineTo(x101 - tw * 0.62, y); g.lineTo(x101 + tw * 0.62, y); g.lineTo(x101 + tw * 0.5, y + tierH); g.closePath(); g.fill();
+      g.strokeStyle = col; g.globalAlpha = 0.85; g.lineWidth = 1; g.beginPath(); g.moveTo(x101 - tw * 0.62, y + 0.5); g.lineTo(x101 + tw * 0.62, y + 0.5); g.stroke(); g.globalAlpha = 1;
+    }
+    const tt = base - 8 * tierH;
+    g.fillStyle = '#262a48'; g.fillRect(x101 - tw * 0.3, tt - tierH * 0.8, tw * 0.6, tierH * 0.8); g.fillRect(x101 - 1, tt - tierH * 2.6, 2, tierH * 1.8);
+    g.fillStyle = col; g.globalAlpha = 0.25; g.beginPath(); g.arc(x101, tt - tierH * 0.4, tw * 0.9, 0, TAU); g.fill(); g.globalAlpha = 1;
+    hill(hy + FH * 0.5, FH * 0.9, '#121530', 4);
+    // cables behind the buildings' fronts are drawn after; first the buildings
+    for (const b of blds) paintBuilding(g, b);
+    // window glass is cut out, so the lights can live underneath
+    for (const u of units) g.clearRect(u.x, u.y, u.w, u.h);
+    for (const u of units) paintCage(g, u);
+    for (const b of blds) paintGround(g, b);
+    // cables
+    g.strokeStyle = 'rgba(10,10,14,0.85)'; g.lineWidth = 1;
+    for (const [x1, y1, x2, y2, sag] of cables) { g.beginPath(); g.moveTo(x1, y1); g.quadraticCurveTo((x1 + x2) / 2, (y1 + y2) / 2 + sag, x2, y2); g.stroke(); }
+    // the street
+    const st = g.createLinearGradient(0, yG, 0, H); st.addColorStop(0, '#24252b'); st.addColorStop(1, '#16171b');
+    g.fillStyle = st; g.fillRect(0, yG, W, H - yG);
+    g.fillStyle = '#5a5a5e'; g.fillRect(0, yG, W, Math.max(2, SH * 0.04));
+    g.fillStyle = '#a8302a'; g.fillRect(0, yG + SH * 0.04, W, Math.max(2, SH * 0.025));
+    g.strokeStyle = 'rgba(230,230,220,0.35)'; g.lineWidth = Math.max(1.5, SH * 0.015); g.beginPath(); g.moveTo(0, yG + SH * 0.5); g.lineTo(W, yG + SH * 0.5); g.stroke();
+    g.fillStyle = '#2e2f35'; g.fillRect(W * 0.15, yG + SH * 0.12, FH * 0.5, SH * 0.06); g.strokeStyle = '#1a1a1e'; for (let k = 1; k < 6; k++) { g.beginPath(); g.moveTo(W * 0.15 + k * FH * 0.08, yG + SH * 0.12); g.lineTo(W * 0.15 + k * FH * 0.08, yG + SH * 0.18); g.stroke(); }
+    if (cfg.rain) {
+      // a wet street mirrors the store and the lamp
+      g.fillStyle = 'rgba(120,140,190,0.06)'; g.fillRect(0, yG, W, H - yG);
+      for (const bb of blds) if (bb.shop === 'store') for (let k = 0; k < 7; k++) { g.fillStyle = `rgba(230,255,240,${0.07 - k * 0.009})`; g.fillRect(bb.x + bb.w * (0.25 + k * 0.07), yG + SH * 0.08, Math.max(1, bb.w * 0.025), SH * (0.75 - k * 0.07)); }
+      for (let k = 0; k < 5; k++) { g.fillStyle = `rgba(255,220,160,${0.08 - k * 0.012})`; g.fillRect(lampX - FH * 0.35 - 1 + (k - 2) * 2.5, yG + SH * 0.1, 2, SH * (0.8 - k * 0.08)); }
+    }
+    // the lamp post and its light
+    const lt = yG - FH * 2.3;
+    const pool = g.createRadialGradient(lampX - FH * 0.35, lt + FH * 0.1, 0, lampX - FH * 0.35, lt + FH * 0.1, FH * 3);
+    pool.addColorStop(0, 'rgba(255,214,150,0.22)'); pool.addColorStop(1, 'rgba(255,214,150,0)');
+    g.fillStyle = pool; g.fillRect(lampX - FH * 3.4, lt - FH * 3, FH * 6, FH * 6);
+    g.fillStyle = '#3a3c42'; g.fillRect(lampX - 2, lt, 4, yG + SH * 0.06 - lt);
+    g.strokeStyle = '#3a3c42'; g.lineWidth = 3; g.beginPath(); g.moveTo(lampX, lt + 2); g.quadraticCurveTo(lampX, lt - FH * 0.2, lampX - FH * 0.35, lt - FH * 0.1); g.stroke();
+    g.fillStyle = '#ffe7b0'; g.beginPath(); g.ellipse(lampX - FH * 0.35, lt - FH * 0.06, FH * 0.12, FH * 0.05, 0, 0, TAU); g.fill();
+  }
+  function paintBuilding(g, b) {
+    const { x, w, gf, top } = b;
+    g.fillStyle = b.wall; g.fillRect(x, top, w, yG - gf - top);
+    // little square tiles
+    g.strokeStyle = 'rgba(255,255,255,0.045)'; g.lineWidth = 1;
+    const ts = Math.max(5, FH * 0.07);
+    for (let yy = top; yy < yG - gf; yy += ts) { g.beginPath(); g.moveTo(x, yy); g.lineTo(x + w, yy); g.stroke(); }
+    for (let xx = x; xx < x + w; xx += ts) { g.beginPath(); g.moveTo(xx, top); g.lineTo(xx, yG - gf); g.stroke(); }
+    // years of rain
+    for (const [sx, len, sw] of b.stains) { const gr = g.createLinearGradient(0, top, 0, top + (yG - gf - top) * len); gr.addColorStop(0, 'rgba(0,0,0,0.22)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(x + w * sx, top, sw * FH * 0.04, (yG - gf - top) * len); }
+    // floor lines and the edge between buildings
+    g.fillStyle = 'rgba(0,0,0,0.18)'; for (let f = 1; f <= 4; f++) g.fillRect(x, yG - gf - f * FH, w, 2);
+    g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(x, top, 2, yG - top);
+    // roof: parapet, water tank, tin room
+    g.fillStyle = shade(b.wall, 0.8); g.fillRect(x, top - FH * 0.12, w, FH * 0.12);
+    if (b.shed) { const sx = x + w * 0.1, sw = w * 0.5, sh = FH * 0.55; g.fillStyle = '#3c4a66'; g.fillRect(sx, top - FH * 0.12 - sh, sw, sh); g.strokeStyle = 'rgba(255,255,255,0.08)'; for (let k = 1; k * 5 < sw; k++) { g.beginPath(); g.moveTo(sx + k * 5, top - FH * 0.12 - sh); g.lineTo(sx + k * 5, top - FH * 0.12); g.stroke(); } g.fillStyle = b.shedLit ? '#ffd88a' : '#1a1e2a'; g.fillRect(sx + sw * 0.6, top - FH * 0.12 - sh * 0.75, sw * 0.25, sh * 0.35); }
+    if (b.tank) { const tx = x + w * 0.72, ty = top - FH * 0.12, tr = FH * 0.2; g.strokeStyle = '#3a3c42'; g.lineWidth = 2; g.beginPath(); g.moveTo(tx - tr * 0.8, ty); g.lineTo(tx - tr * 0.6, ty - FH * 0.25); g.moveTo(tx + tr * 0.8, ty); g.lineTo(tx + tr * 0.6, ty - FH * 0.25); g.stroke(); g.fillStyle = '#8a8e96'; g.fillRect(tx - tr, ty - FH * 0.25 - tr * 1.6, tr * 2, tr * 1.6); g.fillStyle = '#a8acb4'; g.beginPath(); g.ellipse(tx, ty - FH * 0.25 - tr * 1.6, tr, tr * 0.25, 0, 0, TAU); g.fill(); }
+    // a vertical sign
+    if (b.vsign) {
+      const [t, c] = b.vsign, sx = b.doorLeft ? x + w * 0.88 : x + w * 0.02, sw = w * 0.1, sy = yG - gf - FH * 1.9, sh = FH * 1.7;
+      g.fillStyle = c; g.fillRect(sx, sy, sw, sh); g.strokeStyle = 'rgba(255,255,255,0.6)'; g.lineWidth = 1; g.strokeRect(sx + 0.5, sy + 0.5, sw - 1, sh - 1);
+      g.fillStyle = '#fff'; g.font = `700 ${Math.round(sw * 0.7)}px ${FACE}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+      [...t].forEach((ch, i) => g.fillText(ch, sx + sw / 2, sy + sh * (i + 0.5) / t.length));
+    }
+  }
+  function paintCage(g, u) {
+    const { x, y, w, h } = u, b = u.b;
+    // the air conditioner and its drip stain
+    if (u.ac) {
+      const aw = w * 0.42, ah = h * 0.42, ax = u.ac === 'side' ? (u.side ? x - aw - w * 0.12 : x + w + w * 0.12) : x + w * 0.3, ay = u.ac === 'side' ? y + h * 0.3 : y + h + h * 0.28;
+      if (ax > b.x && ax + aw < b.x + b.w) {
+        const gr = g.createLinearGradient(0, ay + ah, 0, ay + ah + FH * 0.5); gr.addColorStop(0, 'rgba(0,0,0,0.3)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(ax + aw * 0.4, ay + ah, aw * 0.2, FH * 0.5);
+        g.fillStyle = '#b8b8b2'; g.fillRect(ax, ay, aw, ah); g.strokeStyle = '#8a8a86'; g.lineWidth = 1;
+        for (let k = 1; k < 5; k++) { g.beginPath(); g.moveTo(ax + 2, ay + ah * k / 5); g.lineTo(ax + aw * 0.55, ay + ah * k / 5); g.stroke(); }
+        g.beginPath(); g.arc(ax + aw * 0.77, ay + ah / 2, ah * 0.32, 0, TAU); g.stroke();
+      }
+    }
+    // the iron cage, with a little tin roof, plants and laundry
+    const cx = x - w * 0.08, cy = y - h * 0.12, cw = w * 1.16, ch = h * 1.24;
+    g.fillStyle = shade(u.cage, 0.6); g.beginPath(); g.moveTo(cx - 3, cy); g.lineTo(cx + cw / 2, cy - h * 0.12); g.lineTo(cx + cw + 3, cy); g.closePath(); g.fill();
+    g.strokeStyle = u.cage; g.lineWidth = 1.2; g.strokeRect(cx, cy, cw, ch);
+    const n = Math.max(5, Math.round(cw / 6));
+    for (let k = 1; k < n; k++) { g.beginPath(); g.moveTo(cx + cw * k / n, cy); g.lineTo(cx + cw * k / n, cy + ch); g.stroke(); }
+    g.beginPath(); g.moveTo(cx, cy + ch * 0.22); g.lineTo(cx + cw, cy + ch * 0.22); g.stroke();
+    for (let k = 0; k < n; k++) { g.beginPath(); g.moveTo(cx + cw * k / n, cy + ch * 0.22); g.lineTo(cx + cw * (k + 0.5) / n, cy + ch * 0.1); g.lineTo(cx + cw * (k + 1) / n, cy + ch * 0.22); g.stroke(); }
+    g.fillStyle = shade(u.cage, 0.7); g.fillRect(cx - 2, cy + ch - 2, cw + 4, 3);
+    for (let k = 0; k < u.plants; k++) { const px = cx + cw * (0.15 + k * 0.25); g.fillStyle = '#8a4a2a'; g.fillRect(px - 3, cy + ch - 7, 6, 5); g.fillStyle = pick(['#2f6a3a', '#3f7a3a', '#4a8a4a']); g.beginPath(); g.arc(px, cy + ch - 9, 5, 0, TAU); g.fill(); g.beginPath(); g.arc(px - 3, cy + ch - 6, 3, 0, TAU); g.fill(); }
+    if (u.laundry) {
+      g.strokeStyle = '#8a8a8a'; g.lineWidth = 1; g.beginPath(); g.moveTo(cx, cy + ch + 2); g.lineTo(cx + cw, cy + ch + 2); g.stroke();
+      let lx = cx + 3;
+      while (lx < cx + cw - 6) {
+        const c = pick(['#e8e4dc', '#4a6aa8', '#c84a5a', '#3a3a40', '#e8c84a', '#8ab0d0', '#f0a0b0']), k = pick(['shirt', 'pants', 'sock']);
+        g.fillStyle = shade(c, 0.75);
+        if (k === 'shirt') { g.fillRect(lx, cy + ch + 2, 9, 11); g.fillRect(lx - 2, cy + ch + 2, 13, 4); lx += 15; }
+        else if (k === 'pants') { g.fillRect(lx, cy + ch + 2, 8, 4); g.fillRect(lx, cy + ch + 2, 3.5, 14); g.fillRect(lx + 4.5, cy + ch + 2, 3.5, 14); lx += 12; }
+        else { g.fillRect(lx, cy + ch + 2, 3, 6); lx += 6; }
+      }
+    }
+  }
+  function paintGround(g, b) {
+    const { x, w, gf } = b, ct = yG - gf;
+    // the shop sign over the arcade
+    const sh = FH * 0.28;
+    if (b.shop === 'store') {
+      g.fillStyle = '#f2f2ee'; g.fillRect(x + 2, ct - sh, w - 4, sh);
+      ['#0b8a4b', '#f08a24', '#d62a2a'].forEach((c, i) => { g.fillStyle = c; g.fillRect(x + 2, ct - sh + sh * (0.52 + i * 0.16), w - 4, sh * 0.13); });
+      g.fillStyle = '#0b8a4b'; g.font = `800 ${Math.round(sh * 0.42)}px ${FACE}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('24H', x + w / 2, ct - sh * 0.74);
+    } else {
+      const [t, c] = b.sign;
+      g.fillStyle = c; g.fillRect(x + 3, ct - sh, w - 6, sh); g.strokeStyle = 'rgba(255,255,255,0.5)'; g.lineWidth = 1; g.strokeRect(x + 3.5, ct - sh + 0.5, w - 7, sh - 1);
+      g.fillStyle = '#fff'; g.font = `700 ${Math.round(sh * 0.58)}px ${FACE}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(t, x + w / 2, ct - sh / 2 + 1);
+    }
+    // the arcade: slab, shadowed back wall, pillars
+    g.fillStyle = shade(b.wall, 0.75); g.fillRect(x, ct, w, FH * 0.14);
+    g.fillStyle = '#1e1c1e'; g.fillRect(x, ct + FH * 0.14, w, yG - ct - FH * 0.14);
+    if (b.shop === 'store') {
+      const sx = b.doorLeft ? x + w * 0.38 : x + w * 0.06, sw = w * 0.56;
+      g.fillStyle = '#e8f6f0'; g.fillRect(sx, ct + FH * 0.24, sw, yG - ct - FH * 0.3);
+      g.fillStyle = 'rgba(120,150,140,0.5)'; for (let k = 0; k < 3; k++) g.fillRect(sx + sw * (0.1 + k * 0.3), ct + FH * 0.4, sw * 0.2, FH * 0.5);
+      g.fillStyle = 'rgba(40,60,50,0.6)'; g.fillRect(sx + sw / 2 - 1, ct + FH * 0.24, 2, yG - ct - FH * 0.3);
+      const light = g.createRadialGradient(sx + sw / 2, yG, 0, sx + sw / 2, yG, FH * 1.4); light.addColorStop(0, 'rgba(230,255,240,0.18)'); light.addColorStop(1, 'rgba(230,255,240,0)'); g.fillStyle = light; g.fillRect(sx - FH, yG - FH * 1.4, sw + FH * 2, FH * 1.6);
+    } else {
+      const sx = b.doorLeft ? x + w * 0.38 : x + w * 0.06, sw = w * 0.56;
+      g.fillStyle = '#5a5c62'; g.fillRect(sx, ct + FH * 0.24, sw, yG - ct - FH * 0.3);
+      g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = 1; for (let yy = ct + FH * 0.28; yy < yG - FH * 0.06; yy += 3) { g.beginPath(); g.moveTo(sx, yy); g.lineTo(sx + sw, yy); g.stroke(); }
+      if (b.shop === 'scooters' || chance(0.6)) for (const [t, c] of b.scooters) paintScooter(g, sx + sw * (0.12 + t * 0.76), yS, c);
+    }
+    // the door frame (the door itself moves)
+    const d = b.door;
+    g.fillStyle = '#121012'; g.fillRect(d.x - 2, yS - d.h - 2, d.w + 4, d.h + 2);
+    // pillars in front
+    const pw = FH * 0.15;
+    for (const px of [x, x + w - pw]) { g.fillStyle = shade(b.wall, 1.15); g.fillRect(px, ct, pw, yG - ct); g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(px + pw * 0.7, ct, pw * 0.3, yG - ct); }
+    // red couplets on the door at New Year
+    if (cfg.newyear) { g.fillStyle = '#c8202a'; g.fillRect(d.x - d.w * 0.18, yS - d.h, d.w * 0.14, d.h * 0.8); g.fillRect(d.x + d.w * 1.04, yS - d.h, d.w * 0.14, d.h * 0.8); g.fillRect(d.x, yS - d.h - FH * 0.12, d.w, FH * 0.1); g.fillStyle = '#f0c040'; g.font = `700 ${Math.round(d.w * 0.14)}px ${FACE}`; g.textAlign = 'center'; g.textBaseline = 'middle'; [...'春滿人間'].forEach((c, i) => g.fillText(c, d.x - d.w * 0.11, yS - d.h + d.h * 0.1 + i * d.h * 0.18)); [...'福滿門庭'].forEach((c, i) => g.fillText(c, d.x + d.w * 1.11, yS - d.h + d.h * 0.1 + i * d.h * 0.18)); }
+  }
+  function paintScooter(g, x, y, c) {
+    const s = FH * 0.32;
+    g.fillStyle = '#111'; g.beginPath(); g.arc(x - s * 0.7, y - s * 0.2, s * 0.2, 0, TAU); g.arc(x + s * 0.7, y - s * 0.2, s * 0.2, 0, TAU); g.fill();
+    g.fillStyle = c; g.beginPath(); g.moveTo(x - s * 0.95, y - s * 0.3); g.quadraticCurveTo(x - s, y - s * 0.75, x - s * 0.4, y - s * 0.72); g.lineTo(x + s * 0.3, y - s * 0.55); g.lineTo(x + s * 0.55, y - s * 1.1); g.lineTo(x + s * 0.75, y - s * 1.1); g.lineTo(x + s * 0.8, y - s * 0.3); g.closePath(); g.fill();
+    g.fillStyle = '#1a1a1e'; g.fillRect(x - s * 0.8, y - s * 0.86, s * 0.6, s * 0.14);
+  }
+
+  // ---------- the neighbours ----------
+  const SKIN = ['#f1c9a5', '#e8b890', '#d8a47c', '#c48c64'];
+  const DARK = ['#1c1714', '#241c16', '#2e231b', '#3a2b20'];
+  const TOPS = ['#e8e4dc', '#3a6ea8', '#c84a4a', '#5a8a5a', '#d8b04a', '#8a5aa8', '#e89ab0', '#4a505a', '#f2f2f2', '#2a8a8a', '#6a7aa0'];
+  const BOTS = ['#2a2e3a', '#3a3a40', '#4a5a7a', '#5a4a3a', '#2a3a5a', '#6a6a70'];
+  function look(type) {
+    const L = { type, skin: pick(SKIN), h: rnd(0.95, 1.04), w: 1, hair: { style: pick(['short', 'short', 'long', 'pony']), col: pick(DARK) }, top: { kind: pick(['tee', 'tee', 'tank', 'shirt']), col: pick(TOPS) }, bottom: { kind: pick(['shorts', 'shorts', 'pants']), col: pick(BOTS) }, shoe: 'slipper', extras: {} };
+    if (type === 'grandma') Object.assign(L, { h: 0.82, w: 1.05, hair: { style: 'bun', col: '#d8d8d2' }, top: { kind: 'shirt', col: pick(['#c87a8a', '#8a7ab8', '#7aa88a']) }, bottom: { kind: 'pants', col: '#3a4a6a', floral: true } });
+    if (type === 'uncle') Object.assign(L, { h: 0.98, w: 1.3, hair: { style: chance(0.5) ? 'bald' : 'short', col: '#2a2420' }, top: { kind: 'tank', col: '#f2f2ee' }, bottom: { kind: 'shorts', col: '#3a3a40' }, belly: true });
+    if (type === 'towel') Object.assign(L, { top: { kind: 'none' }, bottom: { kind: 'towel', col: '#f2f2ee' }, hair: { style: 'short', col: pick(DARK) } });
+    if (type === 'mask') Object.assign(L, { hair: { style: 'long', col: pick(DARK) }, top: { kind: 'pajama', col: pick(['#e8b0c8', '#b0c8e8', '#c8e8b0']) }, bottom: { kind: 'pants', col: '#d8c8d8' } });
+    if (type === 'kid') Object.assign(L, { h: 0.6, top: { kind: 'tee', col: pick(['#f0c030', '#30a0f0', '#f05050', '#50c070']) }, bottom: { kind: 'shorts', col: '#3a4a6a' }, hair: { style: 'short', col: '#1c1714' } });
+    if (type === 'student') Object.assign(L, { top: { kind: 'hoodie', col: pick(['#6a6e78', '#3a4a6a', '#8a3a3a']) }, bottom: { kind: 'pants', col: '#2a2e3a' }, shoe: 'sneaker', extras: { headphones: true, phone: true } });
+    if (type === 'office') Object.assign(L, { top: { kind: 'shirt', col: '#e8ecf0', tie: pick(['#2a3a6a', '#8a2a2a']) }, bottom: { kind: 'pants', col: '#2a2e3a' }, shoe: 'shoe' });
+    if (type === 'clerk') Object.assign(L, { top: { kind: 'tee', col: '#e8f0ea', stripe: true }, bottom: { kind: 'pants', col: '#2a2e3a' }, shoe: 'sneaker', extras: { cap: '#0b8a4b' } });
+    if (type === 'expat') Object.assign(L, { h: 1.08, skin: '#f0cfb0', hair: { style: 'short', col: pick(['#b08a50', '#8a6a40', '#c8a060']) }, top: { kind: 'tee', col: '#2a3a5a' }, bottom: { kind: 'shorts', col: '#a89a78' }, shoe: 'sneaker' });
+    if (type === 'he') Object.assign(L, { h: 1.03, hair: { style: 'short', col: '#1c1714' }, top: { kind: 'tee', col: '#c83a3a' }, bottom: { kind: 'pants', col: '#3a4a6a' } });
+    if (type === 'she') Object.assign(L, { h: 0.95, hair: { style: 'pony', col: '#2a1c14' }, top: { kind: 'tee', col: '#f0c83a' }, bottom: { kind: 'shorts', col: '#4a6a9a' } });
+    return L;
+  }
+  let folk = [], clerk = null, dog = null;
+  function moveIn() {
+    folk = [];
+    const order = [...units].sort(() => Math.random() - 0.5);
+    const special = ['grandma', 'uncle', 'towel', 'mask', 'kid', 'student', 'office', 'expat', 'he', 'she'];
+    let heB = null;
+    for (const u of order) {
+      if (chance(0.12)) continue;
+      let type = special.length ? special.shift() : 'normal';
+      if (type === 'she' && heB === u.b) { special.unshift('she'); type = 'normal'; }
+      const f = { type, unit: u, door: u.b.door, look: look(type), state: 'home', x: u.b.door.cx, y: yS, face: 1, phase: 0, mode: 'stand', bags: 0 };
+      if (type === 'he') heB = u.b;
+      u.folk = f; folk.push(f);
+    }
+    const sb = blds.find(b => b.shop === 'store');
+    const sx = sb.doorLeft ? sb.x + sb.w * 0.66 : sb.x + sb.w * 0.34;
+    clerk = { type: 'clerk', unit: null, door: { cx: sx, x: sx - 10, w: 20, h: 0, open: 0, glass: true }, look: look('clerk'), state: 'home', x: sx, y: yS, face: 1, phase: 0, mode: 'stand', bags: 0 };
+    folk.push(clerk);
+    const he = folk.find(f => f.type === 'he'), she = folk.find(f => f.type === 'she');
+    story = he && she ? { a: he, b: she, step: 0, pair: false } : null;
+  }
+
+  // ---------- one evening ----------
+  const WEEK = ['週日 · Sunday', '週一 · Monday', '週二 · Tuesday', '週三 · Wednesday', '週四 · Thursday', '週五 · Friday', '週六 · Saturday'];
+  const STORY = ['meet', 'nod', 'help', 'chase', 'walk', 'together', 'family'];
+  let T = 0, E0 = 0, day = 0, weekday = 1, cfg = { rain: false, newyear: false }, tm = Infinity, trucks = [], afterTyphoon = false, expatLearned = 0, ending = Infinity;
+  const bags = [], notes = [], hearts = [], marks = [], pofs = [], splashes = [], sparks = [], titles = [];
+  const SIX = 0.165;
+  // Für Elise, as the truck plays it: sixteenth-note slots, melody and left hand
+  const B1 = [[76], [75], [76], [71], [74], [72]], B2 = [[69, 45], [52], [57], [60], [64], [69]], B3 = [[71, 40], [52], [56], [64], [68], [71]], B4 = [[72, 45], [52], [57], [64], [76], [75]];
+  const B7 = [[71, 40], [52], [56], [64], [72], [71]], B8 = [[69, 45], [52], [57], [], [76], [75]], B8b = [[69, 45], [52], [57], [71], [72], [74]];
+  const B9 = [[76, 48], [55], [60], [67], [77], [76]], B10 = [[74, 43], [55], [59], [65], [76], [74]], B11 = [[72, 45], [52], [57], [64], [74], [72]], B12 = [[71, 40], [52], [56], [64], [76], [75]];
+  const SONG = [[76], [75], ...[B1, B2, B3, B4, B1, B2, B7, B8, B1, B2, B3, B4, B1, B2, B7, B8b, B9, B10, B11, B12].flat()];
+  const LOOP0 = 2;
+  const slotT = k => tm + k * SIX;
+  const slotEv = k => k < SONG.length ? SONG[k] : SONG[LOOP0 + (k - LOOP0) % (SONG.length - LOOP0)];
+  const beatAt = (t, half) => { const k = Math.ceil((t - tm) / SIX - 1e-6); for (let j = Math.max(2, k); ; j++) if ((j - 2) % 6 === 0 || (half && (j - 2) % 6 === 3)) return { t: slotT(j), k: j }; };
+  function newEvening() {
+    day++; weekday = day === 1 ? pick([1, 2, 4]) : (weekday + 1) % 7;
+    const noTruck = weekday === 0 || weekday === 3, typhoon = !noTruck && day > 4 && chance(0.1);
+    const truckNight = !noTruck && !typhoon;
+    cfg = { noTruck, typhoon, truckNight, rain: typhoon || chance(0.22), newyear: truckNight && day > 3 && chance(0.08), ghost: truckNight && day > 3 && chance(0.1), doubled: afterTyphoon };
+    afterTyphoon = typhoon;
+    E0 = T; tm = truckNight ? E0 + 3.6 : Infinity; ending = Infinity;
+    for (const a of [bags, notes, hearts, marks, pofs, splashes, sparks, titles]) a.length = 0;
+    paintFacade();
+    for (const u of units) { u.light = u.lightTo = chance(0.2) ? 1 : 0; u.dash = -9; u.wave = -9; }
+    for (const b of blds) b.door.open = 0;
+    const weather = cfg.typhoon ? '颱風 · typhoon' : cfg.newyear ? '除夕 · New Year\'s Eve' : cfg.ghost ? '中元 · Ghost Month' : cfg.rain ? '雨 · rain' : '';
+    const lines = [`第${day}天 · Day ${day}`, WEEK[weekday]];
+    if (weather) lines.push(weather);
+    if (day === 1) titles.push({ lines: ['Für Elise'], big: true, t: T, life: 6 });
+    titles.push({ lines, t: T + (day === 1 ? 0.6 : 0), life: 5.5 });
+    // the expat learns the shoes before he learns the schedule
+    const ex = folk.find(f => f.type === 'expat');
+    if (ex && day >= 6) ex.look.shoe = 'slipper';
+    for (const f of folk) { const door = f.unit ? f.unit.b.door : f.door; Object.assign(f, { door, state: 'home', x: door.cx, y: yS, bags: 0, rec: null, out: false, lightT: Infinity, dashT: Infinity, doorT: Infinity, truck: null, landT: 0, throwT: Infinity, u: 0, mode: 'stand', role: null, stroller: false, late: false, pauseT: 0, tagged: false,
+      released: false, sure: false, miss: false, picked: false, pickUp: false, joint: false, arms: null, waving: false, lookedBack: false, mode0: null, until: 0, waveAt: 0, blush: false }); }
+    trucks = [];
+    if (truckNight) plan(); else quietNight();
+  }
+  function plan() {
+    const stopX = clamp(W * 0.48 - TL, -TL * 0.25, W * 0.2);
+    const g = { kind: 'garbage', x: stopX + (W - stopX) * 2.2, stopX, state: 'come', v: 0, tStop: tm + 12, nextFree: tm + 12.7, queue: [], bump: 0, wheel: 0, lastBag: 0, compact: 0 };
+    g.vA = (g.x - stopX) / 12;
+    const r = { kind: 'recycle', x: W + TL * 1.4, stopX, state: 'wait', v: 0, queue: [], nextFree: 0, bump: 0, wheel: 0 };
+    trucks = [g, r];
+    const p = cfg.doubled ? 0.85 : 0.6;
+    let lastDoor = 0;
+    for (const f of folk) {
+      const u = f.unit;
+      if (f.type === 'grandma') { f.out = true; f.state = 'early'; f.x = queueSpot(g, 0).x; f.y = yQ; f.face = -1; f.bags = 1; f.truck = g; g.queue.push(f); continue; }
+      if (f.type === 'clerk') { if (!chance(0.7)) continue; f.out = true; f.bags = 2; f.doorT = tm + rnd(3, 7); f.truck = g; continue; }
+      if (f.type === 'he' || f.type === 'she') { f.out = true; }
+      else if (!chance(f.type === 'towel' ? 0.5 : p)) continue;
+      f.out = true; f.bags = cfg.doubled ? 2 : 1; f.truck = g;
+      if (chance(0.3)) f.rec = pick(['bottles', 'cardboard']);
+      f.lightT = tm + rnd(0.8, 3.2) + (u.f - 1) * 0.15;
+      f.dashT = f.lightT + rnd(0.2, 0.8);
+      f.doorT = f.dashT + 0.6 + u.f * rnd(0.9, 1.4) + (f.type === 'towel' ? rnd(3, 5) : 0) + (f.type === 'student' ? rnd(2, 4) : 0);
+      lastDoor = Math.max(lastDoor, f.doorT);
+    }
+    // somebody is always late
+    const cands = folk.filter(f => f.out && ['normal', 'office', 'student', 'towel', 'uncle'].includes(f.type));
+    if (cands.length) { const l = pick(cands); l.late = true; l.doorT = Infinity; l.lightT = Infinity; l.dashT = Infinity; }
+    // the two of them
+    if (story) {
+      const { a, b } = story;
+      const beat = story.pair ? 'pair' : STORY[story.step];
+      if (!story.pair) story.step++;
+      story.beat = beat;
+      for (const f of [a, b]) { f.out = true; f.late = false; f.bags = 1; f.truck = g; f.lightT = tm + rnd(0.8, 2.5); f.dashT = f.lightT + 0.4; f.rec = null; }
+      a.doorT = a.dashT + 0.6 + a.unit.f * 1.1; b.doorT = b.dashT + 0.6 + b.unit.f * 1.1;
+      if (beat === 'meet') { a.doorT = lastDoor + 1.2; b.doorT = lastDoor + 1.2 + Math.abs(a.door.cx - b.door.cx) / (PH * 2.6) * 0.5; a.role = b.role = 'meet'; }
+      if (beat === 'nod') { b.doorT = a.doorT + 1.5; a.role = 'waitFor'; b.role = 'nod'; }
+      if (beat === 'help') { b.bags = 2; b.mode0 = 'walk'; a.doorT = b.doorT + 1.6; a.role = 'helper'; b.role = 'helped'; }
+      if (beat === 'chase') { b.late = true; b.doorT = Infinity; b.lightT = tm + 9; b.dashT = Infinity; a.role = 'rescuer'; b.role = 'rescued'; }
+      if (beat === 'walk') { const t = Math.max(a.doorT, b.doorT); a.doorT = t; b.doorT = t + 0.1; a.mode0 = b.mode0 = 'walk'; a.role = b.role = 'walk'; }
+      if (beat === 'together' || beat === 'family' || beat === 'pair') {
+        b.door = a.door; b.doorT = a.doorT + 0.25; a.mode0 = b.mode0 = 'walk'; b.bags = 0; a.role = 'with'; b.role = 'with';
+        if (beat === 'family' || (beat === 'pair' && chance(0.6))) a.stroller = true;
+        if (beat !== 'pair') b.unit.lightTo = 0;
+      }
+      if (beat === 'family') story.pair = true;
+      if (story.pair && beat === 'pair' && story.step >= STORY.length && chance(0.25)) {
+        // their story is told; two others start one
+        const pool = folk.filter(f => f.unit && !['kid', 'he', 'she'].includes(f.type) && f !== a && f !== b);
+        if (pool.length >= 2) { const n1 = pick(pool), n2 = pick(pool.filter(f => f.door !== n1.door)); if (n2) { story.next = [n1, n2]; } }
+      }
+    }
+    // even the dog
+    dog = chance(0.15) ? { state: 'wait', t: tm + rnd(5, 9), x: blds.find(b => b.shop === 'store').door.cx, y: yS, face: 1, phase: 0 } : null;
+    // a scooter that doesn't stop
+    if (chance(0.3)) g.driveBy = { t: tm + rnd(13, 18), x: W + FH, done: false };
+  }
+  function quietNight() {
+    if (cfg.noTruck) {
+      const ex = folk.find(f => f.type === 'expat'), gm = folk.find(f => f.type === 'grandma');
+      if (ex && expatLearned < 2) {
+        expatLearned++;
+        Object.assign(ex, { out: true, bags: 1, lightT: E0 + 3, dashT: E0 + 3.5, doorT: E0 + 5.5, role: 'noTruck' });
+        if (gm) gm.unit.lightTo = 1, gm.unit.waveT = E0 + 15;
+      }
+    }
+    if (cfg.typhoon) {
+      for (const f of folk) if (f.unit && chance(0.35)) Object.assign(f, { out: true, bags: 1, doorT: E0 + rnd(4, 12), role: 'peek' });
+    }
+    if (story && story.step >= 2 && !story.pair && chance(0.8)) {
+      story.a.unit.lightTo = 1; story.b.unit.lightTo = 1; story.a.unit.waveT = E0 + 9; story.b.unit.waveT = E0 + 10.5;
+    }
+    ending = E0 + (cfg.typhoon ? 30 : 28);
+  }
+  // a line at the curb; when it's longer than the street, a second line behind it on the pavement
+  function queueSpot(tr, i) {
+    const x0 = tr.stopX + TL + PH * 0.55, avail = Math.max(PH, W - x0 - PH * 0.35), n = Math.max(1, tr.queue.length);
+    const cap = Math.max(2, Math.floor(avail / (PH * 0.32)) + 1), per = n > cap ? Math.ceil(n / 2) : n;
+    const sp = clamp(avail / Math.max(1, per - 1), PH * 0.32, PH * 0.5), row = i < per ? 0 : 1, j = row ? i - per + 0.5 : i;
+    return { x: x0 + j * sp, y: row ? yQ - (yQ - yS) * 0.6 : yQ };
+  }
+  const hopper = tr => ({ x: tr.x + TL * (tr.kind === 'garbage' ? 0.93 : 0.8), y: yW - TH * (tr.kind === 'garbage' ? 0.8 : 0.55) });
+
+  // ---------- what happens ----------
+  function update(dt) {
+    T += dt;
+    // lights
+    for (const u of units) {
+      u.light += (u.lightTo - u.light) * Math.min(1, dt * 10);
+      if (u.waveT && T > u.waveT && T < u.waveT + 4) u.waving = true; else u.waving = false;
+    }
+    music(dt);
+    for (const tr of trucks) truckTick(tr, dt);
+    for (const f of folk) folkTick(f, dt);
+    if (dog) dogTick(dog, dt);
+    for (let i = bags.length - 1; i >= 0; i--) { const b = bags[i]; if (T >= b.t1) { bags.splice(i, 1); b.land(); } }
+    for (const a of [notes, hearts, marks, pofs, splashes, sparks]) for (let i = a.length - 1; i >= 0; i--) if (T - a[i].t > (a[i].life || 1.6)) a.splice(i, 1);
+    if (cfg.rain) { const n = W / 12 * dt * (cfg.typhoon ? 3 : 1.4); for (let i = 0; i < n || chance(n - i); i++) splashes.push({ x: rnd(0, W), y: rnd(yG + 2, H), t: T, life: 0.4 }); }
+    if (cfg.ghost) for (const b of blds) if (b.barrel && chance(dt * 6)) sparks.push({ x: b.barrel + rnd(-3, 3), y: yG - FH * 0.25, vx: rnd(-8, 8), vy: rnd(-30, -14), t: T, life: 1.2 });
+    // the evening ends when the street is empty again
+    if (ending === Infinity && trucks.length && trucks[0].state === 'gone' && trucks[1].state === 'gone' && folk.every(f => !f.out || f.state === 'home' || f.state === 'gone')) ending = T + 6;
+    if (T > ending + 2.2) newEvening();
+  }
+  function music() {
+    if (!cfg.truckNight || T < tm) return;
+    // melody notes float out of the truck's speaker
+    const tr = trucks[0];
+    while (slotT(noteK) <= T) {
+      const ev = slotEv(noteK);
+      const mel = ev.find(m => m >= 64);
+      if (mel && tr && tr.x < W + TL && tr.x > -TL * 1.2) notes.push({ x: tr.x + TL * 0.13 + rnd(-3, 3), y: yW - TH * 1.08, t: T, m: mel, life: 1.8 });
+      noteK++;
+    }
+    if (!live()) return;
+    while (slotT(schedK) < T + 0.3) {
+      const t = slotT(schedK);
+      if (t >= T - 0.05) for (const m of slotEv(schedK)) chime(m, AC.currentTime + Math.max(0, t - T), m >= 64);
+      schedK++;
+    }
+  }
+  let noteK = 0, schedK = 0;
+  function truckTick(tr, dt) {
+    tr.bump = Math.max(0, tr.bump - dt * 6);
+    if (tr.kind === 'garbage') {
+      if (tr.state === 'come') { tr.x -= tr.vA * dt; if (tr.x <= tr.stopX) { tr.x = tr.stopX; tr.state = 'stop'; brake(); } }
+      else if (tr.state === 'stop') {
+        const busy = tr.queue.length || folk.some(f => f.truck === tr && f.out && ['home', 'door', 'go', 'queue', 'throw', 'early', 'fetch'].includes(f.state) && !f.late && f.role !== 'rescuer' && (isFinite(f.doorT) || f.state !== 'home')) || bags.length;
+        if ((!busy && T > tr.tStop + 8) || T > tr.tStop + 45) { tr.state = 'leave'; tr.t0 = T; for (const f of folk) if (f.late && f.out) { f.doorT = T + rnd(0.2, 0.8); f.lightT = Math.min(f.lightT, T - 2); f.dashT = Infinity; } }
+      } else if (tr.state === 'leave') {
+        tr.v = Math.min(PH * 1.9, tr.v + PH * 0.7 * dt); tr.x -= tr.v * dt;
+        if (tr.x < -TL * 6) { tr.state = 'gone'; }
+        if (trucks[1].state === 'wait' && tr.x < tr.stopX - TL * 1.1) { trucks[1].state = 'come'; trucks[1].vA = (trucks[1].x - trucks[1].stopX) / 5; }
+      }
+      tr.wheel += (tr.state === 'come' ? tr.vA : tr.v) * dt;
+      if (tr.driveBy && !tr.driveBy.done && T > tr.driveBy.t) driveByTick(tr, dt);
+    } else {
+      if (tr.state === 'come') { tr.x -= tr.vA * dt; tr.wheel += tr.vA * dt; if (tr.x <= tr.stopX) { tr.x = tr.stopX; tr.state = 'stop'; tr.tStop = T; tr.nextFree = T + 0.6; brake(); for (const f of folk) if (f.state === 'recWait') { f.state = 'rqueue'; tr.queue.push(f); } tr.queue.sort((a, b) => a.x - b.x); } }
+      else if (tr.state === 'stop') {
+        const busy = tr.queue.length || folk.some(f => f.state === 'recWait' || f.state === 'rthrow') || bags.length;
+        if (!busy && T > tr.tStop + 3) { tr.state = 'leave'; tr.v = 0; }
+      } else if (tr.state === 'leave') { tr.v = Math.min(PH * 2.2, tr.v + PH * 0.8 * dt); tr.x -= tr.v * dt; tr.wheel += tr.v * dt; if (tr.x < -TL * 1.3) tr.state = 'gone'; }
+      else if (tr.state === 'wait' && trucks[0].state === 'gone') { tr.state = 'come'; tr.vA = (tr.x - tr.stopX) / 5; }
+    }
+  }
+  function driveByTick(tr, dt) {
+    const d = tr.driveBy;
+    const near = tr.state === 'stop' && !d.thrown;
+    d.x -= PH * (near ? Math.max(1.2, (d.x - (tr.x + TL + PH * 0.8)) / PH * 1.5) : 4) * dt;
+    if (near && d.x < tr.x + TL + PH * 1.4) { d.thrown = true; const bt = beatAt(T + 0.45, true); throwBag(d.x, yW - PH * 0.9, tr, bt.t, 'white'); }
+    if (d.x < -FH * 2) d.done = true;
+  }
+  function throwBag(x0, y0, tr, landT, kind, miss) {
+    const h = hopper(tr), v = tr.state === 'leave' ? tr.v : 0, x1 = h.x - v * (landT - T) + (miss ? PH * 0.4 : 0), y1 = miss ? yW - TH * 0.4 : h.y;
+    const b = { x0, y0, x1, y1, t0: T, t1: landT, kind, rot: rnd(-6, 6), tr, miss };
+    b.land = () => {
+      if (miss) { bags.push({ x0: x1, y0: y1, x1: x1 + PH * 0.6, y1: yQ, t0: T, t1: T + 0.5, kind, rot: 3, tr, ground: true, land: () => {} }); thump(0.5); return; }
+      tr.bump = 1; tr.lastBag = T; tr.compact++;
+      thump(1, tr);
+      if (tr.kind === 'garbage' && tr.compact % 6 === 0) compactor();
+      if (tr.kind === 'recycle') clink(kind);
+    };
+    bags.push(b);
+    return b;
+  }
+  function folkTick(f, dt) {
+    const u = f.unit, tr = f.truck;
+    const run = (tx, ty, speed) => {
+      const dx = tx - f.x, dy = ty - f.y, d = Math.hypot(dx, dy);
+      if (d < 1.5) { f.x = tx; f.y = ty; f.mode = 'stand'; return true; }
+      const v = Math.min(d / dt, speed);
+      f.x += dx / d * v * dt; f.y += dy / d * v * dt;
+      if (Math.abs(dx) > 0.5) f.face = Math.sign(dx);
+      const was = Math.floor(f.phase / Math.PI);
+      f.phase += dt * (speed > PH * 1.8 ? 13 : 8);
+      f.mode = speed > PH * 1.8 ? 'run' : 'walk';
+      if (Math.floor(f.phase / Math.PI) !== was && f.type !== 'dog') step(f, speed > PH * 1.8);
+      return false;
+    };
+    const runSpeed = f.mode0 === 'walk' || f.type === 'grandma' ? PH * 1.25 : f.type === 'student' ? PH * 1.1 : f.type === 'uncle' ? PH * 2.2 : PH * 2.7;
+    switch (f.state) {
+      case 'home':
+        if (!f.out) return;
+        if (u && T > f.lightT) u.lightTo = 1;
+        if (u && T > f.dashT) { u.dash = T; f.dashT = Infinity; }
+        if (T > f.doorT) { f.state = 'door'; f.t = T; f.x = f.door.cx; f.y = yS; openDoor(f.door); if (f.role === 'with') { const p = f === story.a ? story.b : story.a; if (p === story.b) p.x = f.x - PH * 0.4; } }
+        return;
+      case 'door':
+        if (T - f.t > 0.35) {
+          if (f.role === 'noTruck') { f.state = 'curb'; f.t = T; return; }
+          if (f.role === 'peek') { f.state = 'peek'; f.t = T; return; }
+          if (f.role === 'rescued') { f.state = 'go'; return; }
+          if (f.role === 'with' && story && f === story.b) { f.state = 'follow'; return; }
+          if (f.late && tr.state !== 'stop') { f.state = 'chase'; return; }
+          f.state = 'go';
+          if (!tr.queue.includes(f)) tr.queue.push(f);
+        }
+        return;
+      case 'go': {
+        if (f.role === 'rescued') { run(f.x - f.face * 0, yQ, runSpeed); if (f.bags === 0) { f.state = 'cheer'; f.t = T; } return; }
+        const i = tr.queue.indexOf(f), s = queueSpot(tr, Math.max(0, i));
+        if (run(s.x, s.y, runSpeed)) { f.state = 'queue'; f.face = -1; }
+        if (f.role === 'helper') { const h = story.b; if (h.bags > 1 && Math.hypot(h.x - f.x, h.y - f.y) < PH * 0.7) { h.bags--; f.bags++; hearts.push({ x: (h.x + f.x) / 2, y: f.y - PH * 1.3, t: T, life: 2, small: true }); } }
+        return;
+      }
+      case 'early': case 'queue': {
+        const i = tr.queue.indexOf(f), s = queueSpot(tr, Math.max(0, i));
+        if (run(s.x, s.y, PH * 1.2)) f.face = -1;
+        if (f.role === 'helper') { const h = story.b; if (h.bags > 1 && Math.hypot(h.x - f.x, h.y - f.y) < PH * 0.9) { h.bags--; f.bags++; hearts.push({ x: (h.x + f.x) / 2, y: f.y - PH * 1.3, t: T, life: 2, small: true }); } }
+        if (i === 0 && tr.state === 'stop' && f.throwT === Infinity && Math.abs(f.x - s.x) < 3 && T > tr.tStop + 0.3) {
+          const crowd = tr.queue.length > 4;
+          const b = beatAt(Math.max(T + 0.55, tr.nextFree), crowd);
+          f.landT = b.t; f.throwT = b.t - 0.5;
+          tr.nextFree = b.t + SIX * (crowd ? 3 : 6) - 0.01;
+          // the two of them, the first time: the same beat
+          if (f.role === 'meet') { const o = f === story.a ? story.b : story.a; if (tr.queue[1] === o) { o.landT = f.landT; o.throwT = f.throwT; o.joint = true; f.joint = true; tr.nextFree = b.t + SIX * 6; } }
+        }
+        if (f.throwT !== Infinity && T >= f.throwT) { f.state = 'throw'; f.t = T; f.released = false; tr.queue.splice(tr.queue.indexOf(f), 1); }
+        return;
+      }
+      case 'throw': {
+        f.u = (T - f.t) / 0.5;
+        if (!f.released && f.u > 0.2) {
+          f.released = true;
+          const handX = f.x + f.face * PH * 0.15, handY = f.y - PH * 0.95;
+          if (f.role === 'with' && f === story.a && f.stroller) story.b.u = 0;
+          const b = throwBag(handX, handY, tr, f.landT, f.type === 'grandma' ? 'pink' : pick(['white', 'white', 'blue']));
+          f.bags = Math.max(0, f.bags - 1);
+          if (f.joint) { b.joint = true; if (f === story.a) after(Math.max(0, f.landT - T - 0.08), () => { pofs.push({ x: hopper(tr).x, y: hopper(tr).y - PH * 0.2, t: T, life: 0.8 }); pof(); }); }
+        }
+        if (f.u >= 1) {
+          f.throwT = Infinity; f.u = 0;
+          if (f.bags > 0) { f.state = 'queue'; tr.queue.unshift(f); return; }
+          afterThrow(f);
+        }
+        return;
+      }
+      case 'gaze': {
+        const o = f === story.a ? story.b : story.a;
+        f.face = Math.sign(o.x - f.x) || 1; f.mode = 'stand';
+        if (f.waveAt && T > f.waveAt && T < f.waveAt + 1.4) f.waving = true; else f.waving = false;
+        if (T > f.until) { f.waving = false; f.state = f.rec ? 'toRec' : 'back'; }
+        return;
+      }
+      case 'linger': {
+        const o = story.b; f.face = Math.sign(o.x - f.x) || -1;
+        run(f.lx, yS + (yQ - yS) * 0.4, PH * 1.2); f.face = Math.sign(o.x - f.x) || -1;
+        if (o.state === 'gaze' || o.state === 'back' || o.state === 'toRec') { f.state = 'gaze'; f.until = T + 2.4; f.waveAt = T + 0.6; o.state = 'gaze'; o.until = T + 2.4; o.waveAt = T + 0.9; }
+        if (T - f.t > 25) f.state = 'back';
+        return;
+      }
+      case 'doorwait': {
+        const o = story.b;
+        run(f.door.cx + PH * 0.5, yS + 2, PH * 1.2); f.face = 1;
+        if (o.state === 'door' || o.state === 'go') { f.state = 'fetch'; }
+        if (T - f.t > 40) f.state = 'back';
+        return;
+      }
+      case 'fetch': {
+        const o = story.b;
+        if (run(o.x + PH * 0.35, o.y, PH * 3)) { o.bags = 0; f.bags = 1; f.state = 'chase'; f.sure = true; o.state = 'cheer'; o.t = T; }
+        return;
+      }
+      case 'chase': {
+        const tr0 = trucks[0];
+        if (tr0.state === 'gone' || tr0.x < -TL) { f.state = 'giveup'; f.t = T; return; }
+        const tx = tr0.x + TL + PH * 0.45;
+        run(tx, yQ, PH * 3.1);
+        if (f.throwT === Infinity && f.x - (tr0.x + TL) < PH * 1.1) {
+          const b = beatAt(T + 0.42, true);
+          f.landT = b.t; f.throwT = b.t - 0.45; f.miss = !f.sure && chance(0.4);
+        }
+        if (f.throwT !== Infinity && T >= f.throwT) {
+          if (!f.released) {
+            f.released = true; f.u = 0.3;
+            throwBag(f.x + f.face * PH * 0.15, f.y - PH * 0.95, tr0, f.landT, 'white', f.miss);
+            f.bags = 0;
+            if (f.miss) after(1.6, () => { f.state = 'giveup'; f.t = T; f.pickUp = true; });
+            else { after(0.6, () => { f.state = 'victory'; f.t = T; if (f.role === 'rescuer') hearts.push({ x: (f.x + story.b.x) / 2, y: yQ - PH * 1.5, t: T, life: 2.8 }); }); }
+          }
+          f.u = Math.min(1, f.u + dt * 2);
+        }
+        return;
+      }
+      case 'victory': { f.mode = 'stand'; f.arms = 'up'; if (T - f.t > 1.8) { f.arms = null; f.state = 'back'; if (f.role === 'rescuer') { const o = story.b; o.arms = null; o.state = 'back'; o.blush = true; } } return; }
+      case 'cheer': { f.mode = 'stand'; f.face = -1; f.arms = T - f.t < 7 ? 'clap' : null; if (T - f.t > 16) { f.arms = null; f.state = 'back'; } return; }
+      case 'giveup': {
+        f.mode = 'stand'; f.face = -1;
+        if (f.pickUp && !f.picked && T - f.t > 0.3) { f.picked = true; f.bags = 1; for (let i = bags.length - 1; i >= 0; i--) if (bags[i].ground) bags.splice(i, 1); }
+        if (T - f.t > 3.5) f.state = 'back';
+        return;
+      }
+      case 'toRec': {
+        if (run(f.rx, yS + 1, PH * 1.4)) { f.state = 'recWait'; f.face = -1; }
+        return;
+      }
+      case 'recWait': f.face = -1; f.mode = 'stand'; if (trucks[1].state === 'stop') { f.state = 'rqueue'; trucks[1].queue.push(f); } return;
+      case 'follow': {
+        const a = story.a, tx = a.x - (a.face || 1) * PH * 0.42;
+        run(tx, a.y, PH * 2.4);
+        if (f.mode === 'stand') f.face = a.face || 1;
+        if (a.state === 'enter' || a.state === 'gone') { f.state = 'enter'; f.t = T; }
+        return;
+      }
+      case 'rqueue': {
+        const rt = trucks[1], i = rt.queue.indexOf(f), s = queueSpot(rt, Math.max(0, i));
+        if (run(s.x, s.y, PH * 1.5)) f.face = -1;
+        if (i === 0 && f.throwT === Infinity && Math.abs(f.x - s.x) < 3) { const b = beatAt(Math.max(T + 0.55, rt.nextFree), true); f.landT = b.t; f.throwT = b.t - 0.5; rt.nextFree = b.t + SIX * 3; }
+        if (f.throwT !== Infinity && T >= f.throwT) { f.state = 'rthrow'; f.t = T; f.released = false; rt.queue.splice(rt.queue.indexOf(f), 1); }
+        return;
+      }
+      case 'rthrow': {
+        f.u = (T - f.t) / 0.5;
+        if (!f.released && f.u > 0.2) { f.released = true; throwBag(f.x + f.face * PH * 0.15, f.y - PH * 0.95, trucks[1], f.landT, f.rec); f.rec = null; }
+        if (f.u >= 1) { f.u = 0; f.throwT = Infinity; f.state = 'back'; }
+        return;
+      }
+      case 'curb': {
+        // the foreigner, on a Wednesday
+        run(W * 0.55, yQ, PH * 1.3);
+        const k = T - f.t;
+        f.face = k > 4 && k < 9 ? (Math.sin(k * 1.6) > 0 ? 1 : -1) : -1;
+        if (k > 6 && k < 6.2 && !f.tagged) { f.tagged = true; marks.push({ f, t: T, ch: '?', life: 2.4 }); }
+        if (k > 13.5) f.arms = 'shrug';
+        if (k > 15.5) { f.arms = null; f.state = 'back'; }
+        return;
+      }
+      case 'peek': {
+        // a typhoon: open the door, look, think better of it
+        f.mode = 'stand'; f.face = 1;
+        if (T - f.t > 2.2) { f.state = 'enter'; f.t = T; openDoor(f.door); }
+        return;
+      }
+      case 'back': {
+        const dx = f.door.cx + (f.role === 'with' && f === story.b ? -PH * 0.35 : 0);
+        if (run(dx, yS, f.mode0 === 'walk' || f.type === 'grandma' ? PH * 1.1 : PH * 1.3)) {
+          if (f.role === 'nod' || (f.role === 'waitFor' && !f.lookedBack)) { if (!f.lookedBack) { f.lookedBack = true; f.pauseT = T + 1.2; } }
+          if (T < f.pauseT) { const o = f === story.a ? story.b : story.a; f.face = Math.sign(o.x - f.x) || 1; return; }
+          f.state = 'enter'; f.t = T; openDoor(f.door);
+        }
+        return;
+      }
+      case 'enter':
+        if (T - f.t > 0.3) { f.state = 'gone'; if (u) { const uu = u; after(rnd(3, 12), () => { if (!(story && story.pair && (f === story.a || f === story.b))) uu.lightTo = chance(0.25) ? 1 : 0; else uu.lightTo = 0; }); } }
+        return;
+    }
+  }
+  function afterThrow(f) {
+    if (f.joint) { f.state = 'gaze'; f.until = T + 2.2; marks.push({ f, t: T + 0.1, ch: '!', life: 1.6 }); f.joint = false; return; }
+    if (f.role === 'waitFor') { f.state = 'linger'; f.t = T; f.lx = queueSpot(f.truck, 0).x + PH * 0.2; return; }
+    if (f.role === 'rescuer') { f.state = 'doorwait'; f.t = T; return; }
+    if (f.role === 'with' && f === story.a) { hearts.push({ x: f.x - PH * 0.2, y: f.y - PH * 1.4, t: T, life: 2.4 }); }
+    if (f.rec) { f.state = 'toRec'; f.rx = clamp(f.truck.stopX + TL + PH * (0.6 + Math.random() * 3), 0, W - PH * 0.3); return; }
+    f.state = 'back';
+  }
+  function dogTick(d, dt) {
+    const tr = trucks[0];
+    if (d.state === 'wait') { if (T > d.t && tr.state === 'stop') { d.state = 'run'; openDoor(null); } return; }
+    if (d.state === 'run') { const tx = tr.x + TL + PH * 0.4; d.face = Math.sign(tx - d.x) || -1; d.x += d.face * PH * 3 * dt; d.phase += dt * 16; d.y = lerp(d.y, yQ, dt * 3); if (Math.abs(d.x - tx) < PH * 0.3) { d.state = 'hop'; d.t = T; const b = beatAt(T + 0.4, true); throwBag(d.x, d.y - PH * 0.5, tr, b.t, 'small'); } return; }
+    if (d.state === 'hop') { if (T - d.t > 0.8) d.state = 'home'; return; }
+    if (d.state === 'home') { d.face = 1; d.x += PH * 2.4 * dt; d.phase += dt * 16; d.y = lerp(d.y, yS, dt * 3); if (d.x > W + PH) d.state = 'gone'; }
+  }
+  const timers = [];
+  function after(dt, f) { timers.push({ t: T + dt, f }); }
+  function runTimers() { for (let i = timers.length - 1; i >= 0; i--) if (T >= timers[i].t) { const f = timers[i].f; timers.splice(i, 1); f(); } }
+  function openDoor(d) { if (d) d.open = T; clank(d ? d.cx : W / 2); }
+
+  // ---------- drawing ----------
+  const limb = (x0, y0, a1, l1, a2, l2) => { const x1 = x0 + Math.sin(a1) * l1, y1 = y0 + Math.cos(a1) * l1; return [x0, y0, x1, y1, x1 + Math.sin(a1 + a2) * l2, y1 + Math.cos(a1 + a2) * l2]; };
+  function seg(p, w, col) { ctx.strokeStyle = col; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(p[2], p[3]); ctx.lineTo(p[4], p[5]); ctx.stroke(); }
+  function bagShape(x, y, s, kind) {
+    const col = kind === 'blue' ? '#4a7ac8' : kind === 'pink' ? '#e8a0b0' : kind === 'bottles' ? 'rgba(220,235,230,0.85)' : kind === 'cardboard' ? '#b8895a' : '#eceae2';
+    if (kind === 'cardboard') { ctx.fillStyle = col; ctx.fillRect(x - s * 0.9, y - s * 0.7, s * 1.8, s * 1.3); ctx.strokeStyle = '#8a6a3a'; ctx.lineWidth = 1; ctx.strokeRect(x - s * 0.9, y - s * 0.7, s * 1.8, s * 1.3); return; }
+    ctx.fillStyle = col; ctx.beginPath(); ctx.ellipse(x, y, s * 0.8, s * 0.9, 0, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(x - s * 0.3, y - s * 0.75); ctx.lineTo(x - s * 0.45, y - s * 1.2); ctx.lineTo(x - s * 0.1, y - s * 0.85); ctx.moveTo(x + s * 0.3, y - s * 0.75); ctx.lineTo(x + s * 0.45, y - s * 1.2); ctx.lineTo(x + s * 0.1, y - s * 0.85); ctx.fill();
+    if (kind === 'bottles') { ctx.fillStyle = '#3a8a4a'; ctx.fillRect(x - s * 0.4, y - s * 0.4, s * 0.25, s * 0.8); ctx.fillStyle = '#8a5a2a'; ctx.fillRect(x + s * 0.1, y - s * 0.3, s * 0.25, s * 0.7); }
+    else { ctx.fillStyle = 'rgba(0,0,0,0.1)'; ctx.beginPath(); ctx.ellipse(x + s * 0.25, y + s * 0.2, s * 0.4, s * 0.55, 0, 0, TAU); ctx.fill(); }
+  }
+  function drawFolk(f) {
+    const L = f.look, s = PH * L.h / 100, face = f.face || 1;
+    const mode = f.state === 'throw' || f.state === 'rthrow' || (f.state === 'chase' && f.released && f.u < 1) ? 'throw' : f.mode;
+    const ph = f.phase, amp = mode === 'run' ? 0.7 : mode === 'walk' ? 0.36 : 0;
+    const bob = mode === 'run' ? -Math.abs(Math.sin(ph)) * 4 : mode === 'walk' ? -Math.abs(Math.sin(ph)) * 1.5 : 0;
+    ctx.save(); ctx.translate(f.x, f.y); ctx.scale(face * s, s); ctx.translate(0, bob);
+    const legCol = L.bottom.kind === 'pants' ? L.bottom.col : L.skin, far = c => shade(c.startsWith('#') ? c : '#888888', 0.72);
+    const shoe = L.shoe === 'slipper' ? '#2f62d6' : L.shoe === 'shoe' ? '#151515' : '#e8e8e8';
+    // legs: far one first
+    for (const k of [1, 0]) {
+      const a = Math.sin(ph + k * Math.PI) * amp, bend = mode === 'run' ? 0.25 + 0.8 * Math.max(0, Math.sin(ph + k * Math.PI + 1.8)) : mode === 'walk' ? 0.3 * Math.max(0, Math.sin(ph + k * Math.PI + 1.8)) : 0.05;
+      const p = limb(0, -46, a, 24, -bend, 23), col = k ? far(legCol) : legCol;
+      seg(p, 9, col);
+      if (L.bottom.kind === 'shorts') { ctx.strokeStyle = k ? far(L.bottom.col) : L.bottom.col; ctx.lineWidth = 12; ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(lerp(p[0], p[2], 0.6), lerp(p[1], p[3], 0.6)); ctx.stroke(); }
+      if (L.bottom.floral) { ctx.fillStyle = k ? '#b8a0c8' : '#f0c8e0'; for (const q of [0.3, 0.6, 0.85]) { ctx.beginPath(); ctx.arc(lerp(p[2], p[4], q), lerp(p[3], p[5], q), 1.6, 0, TAU); ctx.fill(); ctx.beginPath(); ctx.arc(lerp(p[0], p[2], q), lerp(p[1], p[3], q), 1.6, 0, TAU); ctx.fill(); } }
+      ctx.fillStyle = k ? shade(shoe, 0.7) : shoe; ctx.fillRect(p[4] - 4, p[5] - 2, 14, 4);
+      if (L.shoe === 'slipper') { ctx.fillStyle = k ? '#bbbbbb' : '#f4f4f4'; ctx.fillRect(p[4] + 1, p[5] - 4.5, 5, 3); }
+    }
+    // far arm
+    const armSwing = -Math.sin(ph) * amp * 1.1, elbow = mode === 'run' ? 1.3 : mode === 'walk' ? 0.3 : 0.15;
+    const topArm = L.top.kind === 'shirt' || L.top.kind === 'hoodie' || L.top.kind === 'pajama' ? L.top.col : L.skin;
+    let farA = -armSwing, farE = elbow, nearA = armSwing, nearE = elbow;
+    if (f.arms === 'up') { farA = nearA = 2.9; farE = nearE = 0.2; }
+    if (f.arms === 'clap') { farA = nearA = 1.5; farE = nearE = 0.9 + Math.abs(Math.sin(T * 12)) * 0.5; }
+    if (f.arms === 'shrug') { farA = nearA = 0.6; farE = nearE = -1.8; }
+    if (f.waving) { nearA = 2.7; nearE = 0.4 + Math.sin(T * 10) * 0.35; }
+    if (mode === 'throw') { const u = clamp(f.u); nearA = u < 0.25 ? lerp(0.2, -0.9, u / 0.25) : lerp(-0.9, 2.5, Math.min(1, (u - 0.25) / 0.35)); nearE = 0.25; }
+    if (L.extras.phone && mode !== 'throw' && !f.arms) { farA = 0.9; farE = 1.4; }
+    if (f.stroller) { nearA = farA = 1.3; nearE = farE = 0.2; }
+    const sh = [1, -76];
+    seg(limb(sh[0], sh[1], farA, 17, farE, 16), 7, far(topArm));
+    // torso
+    const tw = 9 * L.w, topCol = L.top.kind === 'none' ? L.skin : L.top.col;
+    ctx.fillStyle = topCol; rr(ctx, -tw, -82, tw * 2, 40, 7); ctx.fill();
+    if (L.belly) { ctx.beginPath(); ctx.ellipse(tw * 0.55, -56, tw * 0.75, 12, 0, 0, TAU); ctx.fill(); }
+    if (L.top.kind === 'tank') { ctx.fillStyle = L.skin; ctx.fillRect(-tw * 0.4, -82, tw * 0.8, 6); }
+    if (L.top.kind === 'hoodie') { ctx.fillStyle = shade(L.top.col, 0.8); ctx.beginPath(); ctx.ellipse(-tw * 0.7, -82, 6, 5, 0, 0, TAU); ctx.fill(); }
+    if (L.top.kind === 'pajama') { ctx.fillStyle = 'rgba(255,255,255,0.5)'; for (let k = 0; k < 6; k++) { ctx.beginPath(); ctx.arc(-tw + 4 + (k % 3) * tw * 0.7, -76 + Math.floor(k / 3) * 16, 1.4, 0, TAU); ctx.fill(); } }
+    if (L.top.tie) { ctx.fillStyle = L.top.tie; ctx.fillRect(tw * 0.55, -80, 3, 20); }
+    if (L.top.stripe) { ctx.fillStyle = '#0b8a4b'; ctx.fillRect(-tw, -70, tw * 2, 3); ctx.fillStyle = '#f08a24'; ctx.fillRect(-tw, -67, tw * 2, 2); }
+    if (L.bottom.kind === 'towel') { ctx.fillStyle = L.bottom.col; ctx.beginPath(); ctx.moveTo(-tw - 1, -48); ctx.lineTo(tw + 1, -48); ctx.lineTo(tw + 3, -24); ctx.lineTo(-tw - 3, -24); ctx.closePath(); ctx.fill(); ctx.strokeStyle = '#c8c8c0'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(tw * 0.3, -48); ctx.lineTo(tw * 0.5, -24); ctx.stroke(); }
+    if (L.bottom.kind !== 'towel') { ctx.fillStyle = L.bottom.col; ctx.fillRect(-tw, -48, tw * 2, 6); }
+    // head
+    const hx = 3, hy = -91;
+    ctx.fillStyle = L.skin; ctx.fillRect(-1, -84, 6, 6);
+    ctx.beginPath(); ctx.arc(hx, hy, 10.5, 0, TAU); ctx.fill();
+    const hc = L.hair.col;
+    ctx.fillStyle = hc;
+    if (L.hair.style === 'bald') { ctx.beginPath(); ctx.arc(hx, hy, 10.8, Math.PI * 0.75, Math.PI * 1.15); ctx.lineTo(hx - 4, hy); ctx.fill(); }
+    else {
+      ctx.beginPath(); ctx.arc(hx, hy, 11.2, Math.PI * 0.8, Math.PI * 1.95); ctx.quadraticCurveTo(hx + 4, hy - 6, hx - 2, hy - 3); ctx.closePath(); ctx.fill();
+      if (L.hair.style === 'long') { ctx.fillRect(hx - 11, hy - 4, 8, 22); }
+      if (L.hair.style === 'bun') { ctx.beginPath(); ctx.arc(hx - 9, hy - 8, 5, 0, TAU); ctx.fill(); }
+      if (L.hair.style === 'pony') { ctx.strokeStyle = hc; ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(hx - 9, hy - 6); ctx.quadraticCurveTo(hx - 18, hy - 2 + Math.sin(ph) * 3 * (amp > 0 ? 1 : 0.2), hx - 15, hy + 10); ctx.stroke(); }
+    }
+    if (f.type === 'towel') { ctx.fillStyle = '#ffffff'; for (const [bx, by, br] of [[hx - 4, hy - 11, 4], [hx + 2, hy - 13, 5], [hx + 8, hy - 9, 3.5], [hx - 9, hy - 6, 3]]) { ctx.beginPath(); ctx.arc(bx, by, br, 0, TAU); ctx.fill(); } }
+    if (L.extras.cap) { ctx.fillStyle = L.extras.cap; ctx.beginPath(); ctx.arc(hx, hy - 2, 11, Math.PI, 0); ctx.fill(); ctx.fillRect(hx, hy - 4, 15, 3); }
+    if (L.extras.headphones) { ctx.strokeStyle = '#222'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(hx, hy, 12, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke(); ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(hx - 1, hy + 1, 4, 0, TAU); ctx.fill(); }
+    if (f.type === 'mask' && f.state !== 'home') { ctx.fillStyle = '#f6f6f2'; ctx.beginPath(); ctx.ellipse(hx + 5, hy + 1, 6.5, 9.5, 0, -Math.PI / 2, Math.PI / 2); ctx.fill(); ctx.fillStyle = '#333'; ctx.fillRect(hx + 7, hy - 3, 2.5, 1.6); }
+    else { ctx.fillStyle = '#1a1412'; ctx.beginPath(); ctx.arc(hx + 6.5, hy - 1.5, 1.3, 0, TAU); ctx.fill(); ctx.strokeStyle = 'rgba(60,30,20,0.7)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(hx + 6.5, hy + 5); ctx.lineTo(hx + 9.5, hy + 4.5); ctx.stroke(); }
+    if (f.blush) { ctx.fillStyle = 'rgba(255,120,140,0.5)'; ctx.beginPath(); ctx.arc(hx + 5, hy + 2.5, 2.6, 0, TAU); ctx.fill(); }
+    // near arm, bags, phone, umbrella, stroller
+    const nearP = limb(sh[0], sh[1], nearA, 17, nearE, 16);
+    const farP = limb(sh[0], sh[1], farA, 17, farE, 16);
+    if (L.top.kind === 'tee') { ctx.strokeStyle = topCol; ctx.lineWidth = 9; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(nearP[0], nearP[1]); ctx.lineTo(lerp(nearP[0], nearP[2], 0.45), lerp(nearP[1], nearP[3], 0.45)); ctx.stroke(); }
+    seg(nearP, 7, topArm);
+    ctx.fillStyle = L.skin; ctx.beginPath(); ctx.arc(nearP[4], nearP[5], 3.6, 0, TAU); ctx.fill();
+    if (L.extras.phone && mode !== 'throw' && !f.arms) { ctx.fillStyle = '#111'; ctx.fillRect(farP[4] - 2, farP[5] - 6, 4, 7); ctx.fillStyle = 'rgba(160,210,255,0.8)'; ctx.fillRect(farP[4] - 1.2, farP[5] - 5, 2.4, 5); }
+    const bs = f.type === 'kid' ? 7 : 10;
+    if (f.bags > 0 && mode !== 'throw') bagShape(nearP[4] + 1, nearP[5] + bs * 0.9, bs, 'white');
+    if (f.bags > 1 && mode !== 'throw') bagShape(farP[4] + 1, farP[5] + bs * 0.9, bs, 'blue');
+    if (mode === 'throw' && !f.released) bagShape(nearP[4], nearP[5] + bs * 0.6, bs, 'white');
+    if (f.rec && mode !== 'throw' && f.state !== 'rthrow') bagShape(farP[4] + 1, farP[5] + bs * 0.9, bs, f.rec);
+    if (f.type === 'grandma' && f.bags > 0) { ctx.strokeStyle = '#555'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(farP[4], farP[5]); ctx.lineTo(-18, -14); ctx.stroke(); ctx.fillStyle = '#8a3a4a'; rr(ctx, -26, -34, 14, 26, 3); ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1; for (let k = 0; k < 3; k++) { ctx.beginPath(); ctx.moveTo(-26, -30 + k * 8); ctx.lineTo(-12, -30 + k * 8); ctx.stroke(); } ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(-19, -5, 4, 0, TAU); ctx.fill(); }
+    if (f.stroller) { ctx.fillStyle = '#3a5a8a'; rr(ctx, 22, -50, 24, 18, 5); ctx.fill(); ctx.fillStyle = '#5a7aaa'; ctx.beginPath(); ctx.arc(34, -50, 12, Math.PI, 0); ctx.fill(); ctx.fillStyle = '#f1c9a5'; ctx.beginPath(); ctx.arc(38, -48, 5, 0, TAU); ctx.fill(); ctx.strokeStyle = '#222'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(nearP[4], nearP[5]); ctx.lineTo(24, -48); ctx.moveTo(26, -32); ctx.lineTo(26, -6); ctx.moveTo(42, -32); ctx.lineTo(42, -6); ctx.stroke(); ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(26, -5, 5, 0, TAU); ctx.arc(42, -5, 5, 0, TAU); ctx.fill(); }
+    if (cfg.rain && f.state !== 'home' && f.state !== 'throw' && f.state !== 'rthrow' && f.type !== 'towel') {
+      ctx.strokeStyle = '#ccc'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(farP[4], farP[5]); ctx.lineTo(farP[4] + 2, -128); ctx.stroke();
+      ctx.fillStyle = f.type === 'he' || f.type === 'she' ? 'rgba(240,120,150,0.45)' : 'rgba(225,238,255,0.35)'; ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+      ctx.beginPath(); ctx.ellipse(farP[4] + 2, -126, 30, 14, 0, Math.PI, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  function drawDog(d) {
+    const s = PH / 100;
+    ctx.save(); ctx.translate(d.x, d.y); ctx.scale(d.face * s, s);
+    const k = Math.sin(d.phase) * (d.state === 'run' || d.state === 'home' ? 1 : 0);
+    ctx.strokeStyle = '#c9a26a'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+    for (const [x0, ph] of [[-14, 0], [-8, Math.PI], [10, Math.PI], [16, 0]]) { ctx.beginPath(); ctx.moveTo(x0, -22); ctx.lineTo(x0 + Math.sin(d.phase + ph) * 6 * Math.abs(k), 0); ctx.stroke(); }
+    ctx.fillStyle = '#c9a26a'; ctx.beginPath(); ctx.ellipse(0, -28, 20, 9, 0, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(22, -38, 8, 0, TAU); ctx.fill(); ctx.beginPath(); ctx.moveTo(18, -44); ctx.lineTo(21, -54); ctx.lineTo(25, -45); ctx.fill();
+    ctx.strokeStyle = '#c9a26a'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(-24, -36, 6, 0.5, 4); ctx.stroke();
+    ctx.fillStyle = '#1a1412'; ctx.beginPath(); ctx.arc(26, -40, 1.4, 0, TAU); ctx.arc(30, -36, 1.8, 0, TAU); ctx.fill();
+    if (d.state === 'run') bagShape(32, -30, 7, 'white');
+    ctx.restore();
+  }
+  function drawTruck(tr) {
+    if (tr.state === 'gone' || tr.state === 'wait' || tr.x > W + 10 || tr.x < -TL - 10) return;
+    const x = tr.x, L = TL, by = yW, dy = -Math.sin(tr.bump * Math.PI) * 2;
+    ctx.save(); ctx.translate(0, dy);
+    const wheel = (wx) => { ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(wx, by - WR, WR, 0, TAU); ctx.fill(); ctx.fillStyle = '#8a8e96'; ctx.beginPath(); ctx.arc(wx, by - WR, WR * 0.45, 0, TAU); ctx.fill(); ctx.strokeStyle = '#555'; ctx.lineWidth = 1.5; const a = -tr.wheel / WR; for (let k = 0; k < 4; k++) { ctx.beginPath(); ctx.moveTo(wx, by - WR); ctx.lineTo(wx + Math.cos(a + k * 1.57) * WR * 0.45, by - WR + Math.sin(a + k * 1.57) * WR * 0.45); ctx.stroke(); } };
+    if (tr.kind === 'garbage') {
+      const top = by - TH, bodyX = x + L * 0.27;
+      // body and hopper
+      ctx.fillStyle = '#e8b82a'; rr(ctx, bodyX, top, L * 0.62, TH - WR * 1.1, 4); ctx.fill();
+      ctx.fillStyle = '#2a8a5a'; ctx.fillRect(bodyX, top + TH * 0.55, L * 0.62, TH * 0.08);
+      ctx.fillStyle = '#c89a1a'; for (let k = 1; k < 5; k++) ctx.fillRect(bodyX + L * 0.62 * k / 5, top + 3, 2, TH * 0.5);
+      ctx.fillStyle = '#ffffff'; ctx.font = `700 ${Math.round(TH * 0.16)}px ${FACE}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('清潔隊', bodyX + L * 0.31, top + TH * 0.35);
+      ctx.fillStyle = '#d8a820'; ctx.beginPath(); ctx.moveTo(x + L * 0.89, top + TH * 0.1); ctx.lineTo(x + L, top + TH * 0.3); ctx.lineTo(x + L, by - WR * 1.1); ctx.lineTo(x + L * 0.89, by - WR * 1.1); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#1a1612'; ctx.beginPath(); ctx.moveTo(x + L * 0.9, top + TH * 0.2); ctx.lineTo(x + L * 0.985, top + TH * 0.36); ctx.lineTo(x + L * 0.985, top + TH * 0.6); ctx.lineTo(x + L * 0.9, top + TH * 0.55); ctx.closePath(); ctx.fill();
+      const blade = Math.sin(clamp((T - tr.lastBag) / 0.6) * Math.PI) * TH * 0.08;
+      ctx.fillStyle = '#9a9aa0'; ctx.fillRect(x + L * 0.9, top + TH * 0.2 + blade, L * 0.02, TH * 0.32);
+      ctx.fillStyle = '#ff8a20'; ctx.fillRect(x + L * 0.97, by - WR * 1.6, L * 0.03, TH * 0.06);
+      // cab
+      ctx.fillStyle = '#eef0f2'; rr(ctx, x, top + TH * 0.2, L * 0.28, TH * 0.8 - WR * 0.6, 6); ctx.fill();
+      ctx.fillStyle = '#2a8a5a'; ctx.fillRect(x, top + TH * 0.62, L * 0.28, TH * 0.07);
+      ctx.fillStyle = '#26324a'; ctx.beginPath(); ctx.moveTo(x + L * 0.02, top + TH * 0.27); ctx.lineTo(x + L * 0.12, top + TH * 0.25); ctx.lineTo(x + L * 0.12, top + TH * 0.5); ctx.lineTo(x + L * 0.015, top + TH * 0.52); ctx.closePath(); ctx.fill();
+      ctx.fillRect(x + L * 0.14, top + TH * 0.26, L * 0.1, TH * 0.22);
+      ctx.fillStyle = '#e0b090'; ctx.beginPath(); ctx.arc(x + L * 0.08, top + TH * 0.38, TH * 0.06, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#fff3c4'; ctx.fillRect(x, top + TH * 0.68, L * 0.02, TH * 0.08);
+      // the speaker and the beacon
+      ctx.fillStyle = '#8a8e96'; ctx.beginPath(); ctx.moveTo(x + L * 0.1, top + TH * 0.2); ctx.lineTo(x + L * 0.1, top + TH * 0.08); ctx.lineTo(x + L * 0.04, top + TH * 0.02); ctx.lineTo(x + L * 0.04, top + TH * 0.16); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = Math.sin(T * 9) > 0 ? '#ffb030' : '#7a4a10'; ctx.fillRect(x + L * 0.18, top + TH * 0.12, L * 0.05, TH * 0.08);
+      wheel(x + L * 0.15); wheel(x + L * 0.76);
+      // the worker at the back
+      const wx = x + L * 1.02, wy = by - WR * 0.4, s = PH / 100;
+      ctx.save(); ctx.translate(wx, wy); ctx.scale(-s, s);
+      ctx.strokeStyle = '#2a2e3a'; ctx.lineWidth = 9; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(-2, -46); ctx.lineTo(-3, 0); ctx.moveTo(3, -46); ctx.lineTo(4, 0); ctx.stroke();
+      ctx.fillStyle = '#d8f03a'; rr(ctx, -10, -82, 20, 40, 6); ctx.fill(); ctx.fillStyle = '#e8e8e8'; ctx.fillRect(-10, -66, 20, 3); ctx.fillRect(-10, -56, 20, 3);
+      const nod = T - tr.lastBag < 0.4 ? 1 : 0;
+      ctx.strokeStyle = '#d8f03a'; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(2, -76); ctx.lineTo(nod ? 18 : 10, nod ? -92 : -60); ctx.stroke();
+      ctx.fillStyle = '#e0b090'; ctx.beginPath(); ctx.arc(3, -92 + nod * 2, 10, 0, TAU); ctx.fill(); ctx.fillStyle = '#2a5a8a'; ctx.beginPath(); ctx.arc(3, -94, 10.5, Math.PI, 0); ctx.fill(); ctx.fillRect(3, -96, 14, 3);
+      ctx.restore();
+    } else {
+      const top = by - TH * 0.85;
+      ctx.fillStyle = '#e8ecf0'; rr(ctx, x, top + TH * 0.1, L * 0.26, TH * 0.75 - WR * 0.6, 6); ctx.fill();
+      ctx.fillStyle = '#26324a'; ctx.fillRect(x + L * 0.03, top + TH * 0.18, L * 0.09, TH * 0.2); ctx.fillRect(x + L * 0.14, top + TH * 0.18, L * 0.08, TH * 0.2);
+      ctx.fillStyle = '#3a6ab0'; ctx.fillRect(x, top + TH * 0.5, L * 0.26, TH * 0.06);
+      ctx.fillStyle = '#cfd4da'; ctx.fillRect(x + L * 0.27, by - WR * 1.6, L * 0.6, TH * 0.08);
+      ctx.strokeStyle = '#9aa0a8'; ctx.lineWidth = 2; for (let k = 0; k <= 6; k++) { ctx.beginPath(); ctx.moveTo(x + L * (0.27 + k * 0.1), by - WR * 1.6); ctx.lineTo(x + L * (0.27 + k * 0.1), top + TH * 0.15); ctx.stroke(); }
+      ctx.beginPath(); ctx.moveTo(x + L * 0.27, top + TH * 0.15); ctx.lineTo(x + L * 0.87, top + TH * 0.15); ctx.stroke();
+      for (const [k, c] of [[0, '#4a7ac8'], [1, '#e8e8e8'], [2, '#3a8a4a'], [3, '#c8a05a']]) { ctx.fillStyle = c; rr(ctx, x + L * (0.3 + k * 0.14), top + TH * 0.32, L * 0.12, TH * 0.4, 6); ctx.fill(); }
+      wheel(x + L * 0.14); wheel(x + L * 0.72);
+    }
+    ctx.restore();
+  }
+  function drawWindow(u) {
+    const { x, y, w, h } = u, l = u.light;
+    ctx.fillStyle = '#10141f'; ctx.fillRect(x, y, w, h);
+    if (l > 0.02) {
+      const c = u.tone === 'warm' ? `rgba(255,214,140,${l})` : u.tone === 'cool' ? `rgba(220,236,255,${l * 0.9})` : `rgba(150,180,255,${l * (0.55 + 0.25 * Math.sin(T * 7 + x) * Math.sin(T * 3.1 + y))})`;
+      ctx.fillStyle = c; ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = `rgba(0,0,0,${0.18 * l})`; ctx.fillRect(x, y, w * 0.22, h); ctx.fillRect(x + w * 0.8, y, w * 0.2, h);
+    }
+    // someone hears it
+    const k = (T - u.dash) / 0.7;
+    if (k > 0 && k < 1) { const sx = x + w * (u.side ? 1 - k : k); ctx.fillStyle = 'rgba(20,16,20,0.85)'; ctx.beginPath(); ctx.arc(sx, y + h * 0.42, h * 0.16, 0, TAU); ctx.fill(); ctx.fillRect(sx - h * 0.22, y + h * 0.56, h * 0.44, h * 0.44); }
+    // or waves from the window
+    if (u.waving && l > 0.5) { ctx.fillStyle = 'rgba(20,16,20,0.85)'; ctx.beginPath(); ctx.arc(x + w * 0.5, y + h * 0.45, h * 0.16, 0, TAU); ctx.fill(); ctx.fillRect(x + w * 0.5 - h * 0.22, y + h * 0.6, h * 0.44, h * 0.4); ctx.strokeStyle = 'rgba(20,16,20,0.85)'; ctx.lineWidth = Math.max(2, h * 0.08); ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x + w * 0.5 + h * 0.18, y + h * 0.62); ctx.lineTo(x + w * 0.5 + h * 0.36 + Math.sin(T * 9) * h * 0.08, y + h * 0.25); ctx.stroke(); }
+  }
+  function drawDoor(d) {
+    if (d.glass) return;
+    const k = clamp(1 - Math.abs((T - d.open) - 0.45) / 0.45), open = T - d.open < 0.9 ? sstep(0, 1, k * 1.6) : 0;
+    const w = d.w * (1 - 0.85 * open);
+    ctx.fillStyle = '#0a0809'; ctx.fillRect(d.x, yS - d.h, d.w, d.h);
+    if (open > 0) { ctx.fillStyle = 'rgba(255,220,160,0.25)'; ctx.fillRect(d.x + w, yS - d.h, d.w - w, d.h); }
+    const col = d.b.wall === '#43504a' ? '#3a6a4a' : '#8a2a2a';
+    ctx.fillStyle = col; ctx.fillRect(d.x, yS - d.h, w, d.h);
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1; ctx.strokeRect(d.x + 0.5, yS - d.h + 0.5, w - 1, d.h - 1);
+    if (w > d.w * 0.5) { ctx.strokeStyle = 'rgba(0,0,0,0.35)'; for (let k2 = 1; k2 < 5; k2++) { ctx.beginPath(); ctx.moveTo(d.x + w * k2 / 5, yS - d.h * 0.92); ctx.lineTo(d.x + w * k2 / 5, yS - d.h * 0.62); ctx.stroke(); } ctx.fillStyle = '#d8b040'; ctx.beginPath(); ctx.arc(d.x + w * 0.85, yS - d.h * 0.45, 1.8, 0, TAU); ctx.fill(); }
+  }
+  function heart(x, y, s, a) { ctx.globalAlpha = a; ctx.fillStyle = '#ff6a8a'; ctx.beginPath(); ctx.moveTo(x, y + s * 0.35); ctx.bezierCurveTo(x - s, y - s * 0.3, x - s * 0.5, y - s, x, y - s * 0.45); ctx.bezierCurveTo(x + s * 0.5, y - s, x + s, y - s * 0.3, x, y + s * 0.35); ctx.fill(); ctx.globalAlpha = 1; }
+  function draw() {
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    for (const u of units) drawWindow(u);
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(facade, 0, 0); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    for (const b of blds) drawDoor(b.door);
+    // ghost month barrels
+    if (cfg.ghost) for (const b of blds) { if (b.barrel === undefined) b.barrel = b.x + b.w * rnd(0.3, 0.7); const x = b.barrel; ctx.fillStyle = '#3a3a40'; ctx.fillRect(x - FH * 0.09, yG - FH * 0.22, FH * 0.18, FH * 0.2); ctx.fillStyle = `rgba(255,${150 + 60 * Math.sin(T * 9 + x) | 0},40,0.95)`; ctx.beginPath(); ctx.ellipse(x, yG - FH * 0.22, FH * 0.08, FH * 0.03 + Math.sin(T * 13 + x) * 2, 0, 0, TAU); ctx.fill(); }
+    for (const s of sparks) { const k = T - s.t; ctx.fillStyle = `rgba(255,190,90,${1 - k / s.life})`; ctx.fillRect(s.x + s.vx * k, s.y + s.vy * k, 2, 2); }
+    // everything on the ground, back to front
+    const items = [];
+    for (const f of folk) if (f.out && !['home', 'gone'].includes(f.state)) items.push([f.y, () => drawFolk(f)]);
+    if (dog && dog.state !== 'wait' && dog.state !== 'gone') items.push([dog.y, () => drawDog(dog)]);
+    for (const tr of trucks) items.push([yW, () => drawTruck(tr)]);
+    const db = trucks[0] && trucks[0].driveBy;
+    if (db && T > db.t && !db.done) items.push([yW + 1, () => drawScooterRider(db.x, yW - WR * 0.3, db.thrown)]);
+    items.sort((a, b) => a[0] - b[0]);
+    for (const [, f] of items) f();
+    // bags in the air
+    for (const b of bags) {
+      const u = clamp((T - b.t0) / (b.t1 - b.t0)), x = lerp(b.x0, b.x1, u), y = lerp(b.y0, b.y1, u) - Math.sin(u * Math.PI) * (b.ground ? PH * 0.2 : PH * 0.9);
+      ctx.save(); ctx.translate(x, y); ctx.rotate(b.rot * u); bagShape(0, 0, b.kind === 'small' ? 6 : 10, b.kind === 'small' ? 'white' : b.kind); ctx.restore();
+    }
+    // notes from the speaker
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (const n of notes) { const k = (T - n.t) / n.life; ctx.globalAlpha = 1 - k; ctx.fillStyle = `hsl(${(n.m - 64) * 28 % 360},80%,72%)`; ctx.font = `${Math.round(FH * 0.2)}px ${SERIF}`; ctx.fillText(n.m % 2 ? '♪' : '♫', n.x + Math.sin(k * 5 + n.m) * FH * 0.1, n.y - k * FH * 0.7); }
+    ctx.globalAlpha = 1;
+    for (const p of pofs) { const k = (T - p.t) / p.life; ctx.strokeStyle = `rgba(255,240,180,${1 - k})`; ctx.lineWidth = 2; for (let i = 0; i < 8; i++) { const a = i / 8 * TAU; ctx.beginPath(); ctx.moveTo(p.x + Math.cos(a) * PH * 0.15 * (1 + k), p.y + Math.sin(a) * PH * 0.15 * (1 + k)); ctx.lineTo(p.x + Math.cos(a) * PH * 0.3 * (1 + k), p.y + Math.sin(a) * PH * 0.3 * (1 + k)); ctx.stroke(); } }
+    for (const h of hearts) { const k = (T - h.t) / h.life; heart(h.x + Math.sin(k * 6) * 3, h.y - k * PH * 0.6, PH * (h.small ? 0.12 : 0.2), 1 - k * k); }
+    ctx.font = `700 ${Math.round(PH * 0.35)}px ${FACE}`;
+    for (const m of marks) { const k = (T - m.t) / m.life; if (k < 0) continue; ctx.globalAlpha = Math.min(1, (1 - k) * 4); ctx.fillStyle = '#fff2c0'; ctx.fillText(m.ch, m.f.x, m.f.y - PH * 1.35 - Math.min(1, k * 6) * 4); }
+    ctx.globalAlpha = 1;
+    if (cfg.rain) {
+      ctx.strokeStyle = 'rgba(190,210,240,0.55)'; ctx.lineWidth = 1;
+      for (const s of splashes) { const k = (T - s.t) / s.life; ctx.globalAlpha = 1 - k; ctx.beginPath(); ctx.ellipse(s.x, s.y, 1 + k * 5, 0.5 + k * 1.6, 0, 0, TAU); ctx.stroke(); }
+      ctx.globalAlpha = 1;
+      // drops are only seen where the lamp lights them
+      const lx = lampX - FH * 0.35, ly = yG - FH * 2.3;
+      ctx.strokeStyle = 'rgba(255,230,190,0.5)';
+      for (let i = 0; i < (cfg.typhoon ? 40 : 22); i++) { const sx = lx + Math.sin(i * 12.9898) * FH * 1.2, ph = (T * (1.8 + (i % 5) * 0.2) + i * 0.37) % 1, sy = ly + ph * (yG - ly); const slant = cfg.typhoon ? 6 : 1.5; ctx.beginPath(); ctx.moveTo(sx + ph * slant * 6, sy); ctx.lineTo(sx + ph * slant * 6 + slant, sy + 7); ctx.stroke(); }
+    }
+    // the day
+    for (const t of titles) {
+      const k = T - t.t; if (k < 0 || k > t.life) continue;
+      ctx.globalAlpha = Math.min(1, k * 2, (t.life - k) * 1.5);
+      ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = '#f4ead8';
+      const x0 = 18, y0 = SAFE_T + (t.big ? 64 : 112);
+      if (t.big) { ctx.font = `italic ${Math.round(clamp(W * 0.11, 30, 56))}px ${SERIF}`; ctx.fillText(t.lines[0], x0, y0); ctx.font = `italic 15px ${SERIF}`; ctx.fillStyle = 'rgba(244,234,216,0.75)'; ctx.fillText('Taipei, 8 PM', x0 + 2, y0 + 24); }
+      else t.lines.forEach((l, i) => { ctx.font = i ? `14px ${FACE}` : `600 17px ${FACE}`; ctx.fillStyle = i ? 'rgba(244,234,216,0.75)' : '#f4ead8'; ctx.fillText(l, x0, y0 + i * 21); });
+      ctx.globalAlpha = 1;
+    }
+    if (T > ending) { ctx.fillStyle = `rgba(8,12,34,${clamp((T - ending) / 2.2)})`; ctx.fillRect(0, 0, W, H); }
+    if (T - E0 < 1.2) { ctx.fillStyle = `rgba(8,12,34,${1 - clamp((T - E0) / 1.2)})`; ctx.fillRect(0, 0, W, H); }
+  }
+  function drawScooterRider(x, y, thrown) {
+    const s = FH * 0.4;
+    ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(x - s * 0.7, y - s * 0.2, s * 0.22, 0, TAU); ctx.arc(x + s * 0.7, y - s * 0.2, s * 0.22, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#c8c4bc'; ctx.beginPath(); ctx.moveTo(x + s * 0.95, y - s * 0.3); ctx.quadraticCurveTo(x + s, y - s * 0.75, x + s * 0.4, y - s * 0.72); ctx.lineTo(x - s * 0.3, y - s * 0.55); ctx.lineTo(x - s * 0.55, y - s * 1.1); ctx.lineTo(x - s * 0.75, y - s * 1.1); ctx.lineTo(x - s * 0.8, y - s * 0.3); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#3a4a6a'; ctx.fillRect(x - s * 0.1, y - s * 1.6, s * 0.5, s * 0.8);
+    ctx.fillStyle = '#e8e8e8'; ctx.beginPath(); ctx.arc(x + s * 0.05, y - s * 1.85, s * 0.28, 0, TAU); ctx.fill(); ctx.fillStyle = '#26324a'; ctx.fillRect(x - s * 0.22, y - s * 1.92, s * 0.18, s * 0.14);
+    ctx.strokeStyle = '#3a4a6a'; ctx.lineWidth = s * 0.14; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x, y - s * 1.45); ctx.lineTo(thrown ? x - s * 0.5 : x - s * 0.6, thrown ? y - s * 2.1 : y - s * 1.1); ctx.stroke();
+    if (!thrown) bagShape(x + s * 0.4, y - s * 0.9, 9, 'white');
+  }
+
+  // ---------- sound ----------
+  // The truck's speaker: a toy-keyboard Für Elise, a little out of tune, louder as it comes round the corner.
+  let AC = null, master, verb, noise, truckBus, truckLP, rainG, soundOn = false;
+  const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
+  const live = () => AC && soundOn;
+  const pan = x => clamp(x / W * 2 - 1, -1, 1) * 0.7;
+  function initAudio() {
+    AC = new (window.AudioContext || window.webkitAudioContext)();
+    master = AC.createGain(); master.gain.value = 0;
+    const comp = AC.createDynamicsCompressor(); comp.threshold.value = -16; comp.ratio.value = 3;
+    master.connect(comp); comp.connect(AC.destination);
+    const sr = AC.sampleRate, len = Math.floor(sr * 1.6), ir = AC.createBuffer(2, len, sr);
+    for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3); }
+    verb = AC.createConvolver(); verb.buffer = ir;
+    const vg = AC.createGain(); vg.gain.value = 0.28; verb.connect(vg); vg.connect(master);
+    noise = AC.createBuffer(1, Math.floor(sr * 2), sr);
+    const nd = noise.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+    truckBus = AC.createGain(); truckBus.gain.value = 0;
+    const hp = AC.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 320;
+    const shaper = AC.createWaveShaper(); const curve = new Float32Array(1024); for (let i = 0; i < 1024; i++) { const x = i / 512 - 1; curve[i] = Math.tanh(x * 2.2); } shaper.curve = curve;
+    truckLP = AC.createBiquadFilter(); truckLP.type = 'lowpass'; truckLP.frequency.value = 1200;
+    truckBus.connect(hp); hp.connect(shaper); shaper.connect(truckLP); truckLP.connect(master); truckLP.connect(verb);
+    // the city at night, and the rain when there is rain
+    const src = AC.createBufferSource(), lp = AC.createBiquadFilter(), hum = AC.createGain(); src.buffer = noise; src.loop = true; lp.type = 'lowpass'; lp.frequency.value = 260; hum.gain.value = 0.03; src.connect(lp); lp.connect(hum); hum.connect(master); src.start();
+    const src2 = AC.createBufferSource(), lp2 = AC.createBiquadFilter(); src2.buffer = noise; src2.loop = true; lp2.type = 'lowpass'; lp2.frequency.value = 1800; rainG = AC.createGain(); rainG.gain.value = 0; src2.connect(lp2); lp2.connect(rainG); rainG.connect(master); src2.start(0.7);
+    schedK = Math.max(0, Math.ceil((T - tm) / SIX));
+  }
+  function out(vel, p = 0) { const g = AC.createGain(); g.gain.value = vel; let o = g; if (AC.createStereoPanner) { const s = AC.createStereoPanner(); s.pan.value = p; g.connect(s); o = s; } o.connect(master); o.connect(verb); return g; }
+  function chime(m, t, melody) {
+    const f = mtof(m) * (1 + rnd(-0.004, 0.004));
+    for (const [type, mul, g0, d] of [['square', 1, melody ? 0.07 : 0.045, melody ? 0.42 : 0.5], ['triangle', 2, melody ? 0.04 : 0.02, 0.25]]) {
+      const o = AC.createOscillator(), g = AC.createGain();
+      o.type = type; o.frequency.value = f * mul;
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(g0, t + 0.006); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+      o.connect(g); g.connect(truckBus); o.start(t); o.stop(t + d + 0.02);
+    }
+  }
+  function nz(t, f, q, dur, vel, p = 0) {
+    const s = AC.createBufferSource(), bp = AC.createBiquadFilter(), g = AC.createGain();
+    s.buffer = noise; bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q;
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vel, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    s.connect(bp); bp.connect(g); g.connect(out(1, p)); s.start(t, rnd(0, 1.5)); s.stop(t + dur + 0.05);
+  }
+  function tone(type, f0, f1, t, dur, vel, p = 0) {
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.type = type; o.frequency.setValueAtTime(f0, t); if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vel, t + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(out(1, p)); o.start(t); o.stop(t + dur + 0.02);
+  }
+  const now = () => AC.currentTime + 0.01;
+  let stepsThisFrame = 0;
+  function step(f, running) { if (!live() || stepsThisFrame > 3) return; stepsThisFrame++; nz(now(), f.look.shoe === 'slipper' ? 2400 : 1200, f.look.shoe === 'slipper' ? 2.5 : 1.5, 0.035, running ? 0.06 : 0.03, pan(f.x)); }
+  function clank(x) { if (!live()) return; const t = now(); for (const fr of [310, 770, 1340, 2120]) tone('sine', fr, fr * 0.995, t, 0.35, 0.025, pan(x)); nz(t, 900, 1, 0.12, 0.12, pan(x)); }
+  function thump(vel, tr) {
+    if (!live()) return;
+    // a bag on the beat, tuned to the bar's bass
+    const t = now(), k = Math.floor((T - tm) / SIX), ev = slotEv(Math.max(0, k - ((k - 2) % 6 + 6) % 6)), bass = ev.find(m => m < 60) || 45;
+    tone('sine', mtof(bass + 12) * 1.5, mtof(bass + 12), t, 0.25, 0.22 * vel, tr ? pan(tr.x + TL) : 0); nz(t, 260, 0.8, 0.12, 0.2 * vel);
+  }
+  const compactor = () => { if (!live()) return; const t = now(); tone('sawtooth', 70, 110, t, 1.3, 0.03); };
+  const brake = () => { if (!live()) return; nz(now(), 3400, 3, 0.6, 0.05); };
+  const clink = kind => { if (!live()) return; const t = now(); if (kind === 'cardboard') nz(t, 500, 1, 0.15, 0.15); else for (let i = 0; i < 4; i++) tone('sine', rnd(2200, 3600), rnd(2100, 3500), t + i * 0.04, 0.2, 0.03); };
+  const pof = () => { if (!live()) return; const t = now(); nz(t, 1500, 0.7, 0.2, 0.15); [69, 72, 76, 81].forEach((m, i) => tone('sine', mtof(m), mtof(m), t + 0.1 + i * 0.07, 0.8, 0.05)); };
+  function audioTick() {
+    if (!live()) return;
+    stepsThisFrame = 0;
+    const tr = trucks[0];
+    let g = 0, cut = 600, p = 0;
+    if (cfg.truckNight && tr && T > tm) {
+      const cx = tr.x + TL * 0.1, d = cx > W ? cx - W : cx < 0 ? -cx : 0;
+      g = 0.9 / (1 + d / (W * 0.4)); cut = 700 + 3800 / (1 + d / (W * 0.6)); p = pan(cx);
+      if (tr.state === 'gone') g = 0;
+    }
+    if (Math.abs(g - (truckBus._g ?? -1)) > 0.01) { truckBus.gain.setTargetAtTime(g, AC.currentTime, 0.15); truckBus._g = g; }
+    if (Math.abs(cut - (truckLP._c ?? -1)) > 30) { truckLP.frequency.setTargetAtTime(cut, AC.currentTime, 0.15); truckLP._c = cut; }
+    void p;
+    const rg = cfg.rain ? (cfg.typhoon ? 0.09 : 0.05) : 0;
+    if (rg !== rainG._g) { rainG.gain.setTargetAtTime(rg, AC.currentTime, 0.8); rainG._g = rg; }
+  }
+  addEventListener('pointerdown', () => {
+    if (!AC) initAudio();
+    if (AC.state === 'suspended') AC.resume();
+    soundOn = !soundOn;
+    master.gain.setTargetAtTime(soundOn ? 1.2 : 0, AC.currentTime, 0.2);
+    if (soundOn) schedK = Math.max(schedK, Math.ceil((T - tm) / SIX));
+    document.getElementById('hint').hidden = true;
+  });
+
+  function layout() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = innerWidth; H = innerHeight;
+    cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+    SAFE_T = parseFloat(getComputedStyle(document.getElementById('safe')).paddingTop) || 0;
+    lane(); moveIn();
+    newEvening();
+  }
+  const _newEvening = newEvening;
+  newEvening = function () { _newEvening(); noteK = 0; schedK = 0; timers.length = 0; if (story && story.next && story.pair) { const [n1, n2] = story.next; n1.type0 = n1.type; story = { a: n1, b: n2, step: 0, pair: false }; } };
+  let last = performance.now(), resizeT = 0;
+  function frame(t) {
+    const dt = clamp((t - last) / 1000, 0, 0.05);
+    last = t;
+    runTimers(); update(dt); audioTick();
+    draw();
+    requestAnimationFrame(frame);
+  }
+  addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(layout, 300); });
+  layout();
+  window.__elise = () => ({ T: +T.toFixed(1), day, weekday, cfg: { ...cfg }, story: story && { step: story.step, beat: story.beat, pair: story.pair, a: story.a.state, b: story.b.state },
+    trucks: trucks.map(t => `${t.kind}:${t.state}:${Math.round(t.x)}:q${t.queue.length}`), out: folk.filter(f => f.out).map(f => `${f.type}:${f.state}`), bags: bags.length });
+  try { navigator.wakeLock?.request('screen').catch(() => {}); } catch (e) {}
+  requestAnimationFrame(frame);
+})();
+</script>
+
+</body>
+</html>
