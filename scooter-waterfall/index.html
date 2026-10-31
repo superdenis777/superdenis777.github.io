@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Scooter Waterfall</title>
+<meta name="description" content="Taipei Bridge, morning rush: every scooter that crosses the light plays the next note. Tap for sound.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="機車瀑布 · Scooter Waterfall">
+<meta property="og:description" content="Taipei Bridge, morning rush: every scooter that crosses the light plays the next note. Tap for sound.">
+<meta property="og:url" content="https://superdenis777.github.io/scooter-waterfall/">
+<meta property="og:image" content="https://superdenis777.github.io/scooter-waterfall/preview.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#060a1c">
+<style>
+  /* One ramp, one morning, from night to day. Colours shift with the hour; there is no other theme. */
+  :root { --night: #060a1c; --ink: #f4ead8; color-scheme: dark; }
+  html, body { height: 100%; background: var(--night); }
+  body { margin: 0; overflow: hidden; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  #safe { position: fixed; top: 0; left: 0; padding-top: env(safe-area-inset-top, 0px); visibility: hidden; pointer-events: none; }
+  #hint {
+    position: fixed; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom, 0px) + 20px);
+    text-align: center; font: italic 15px/1.2 Georgia, 'Times New Roman', serif; letter-spacing: 0.04em;
+    color: var(--ink); opacity: 0; pointer-events: none; animation: hint 7s ease-in-out 1.5s forwards;
+  }
+  @keyframes hint { 0% { opacity: 0; } 20% { opacity: 0.7; } 75% { opacity: 0.7; } 100% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { #hint { animation: none; opacity: 0.5; } }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="The scooter ramp off a Taipei bridge, seen from above as it zigzags down to a traffic light, from six in the morning to nine. At first it is night: a few scooters, each a white headlight and a red tail light, come down the ramp and stop at the red light. When the light turns green they pour off it, and every scooter that crosses the line plays the next note of a descending arpeggio over the chords of Pachelbel's Canon, so the more of them there are, the faster the music falls. Towards eight the ramp fills with light from top to bottom; brake lights ripple back up the zigzags when the light turns red and the jam starts moving from the front when it turns green. The sky turns from night to dawn to day, the street lamps go out, and the scooters and their riders become visible in colour. By nine the ramp is empty again. Then the next morning."></canvas>
+<div id="safe"></div>
+<div id="hint">tap for sound</div>
+
+<script>
+(() => {
+  // Rules.
+  // 1. One ramp, one traffic light, one morning from 6:00 to 9:00. Nothing is scripted but the light and the hour.
+  // 2. The traffic is a cellular automaton (Nagel–Schreckenberg): speed up, keep your gap, sometimes hesitate.
+  // 3. Every scooter that crosses the stop line plays the next note. The flow is the tempo.
+  // 4. Each green light is one chord of Pachelbel's Canon, and the notes fall like water. Red is silence.
+  // 5. Night becomes day. Then the next morning.
+  const cv = document.getElementById('c');
+  const ctx = cv.getContext('2d');
+  const TAU = Math.PI * 2;
+  const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const sstep = (a, b, x) => { x = clamp((x - a) / (b - a)); return x * x * (3 - 2 * x); };
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+  const mix = (c1, c2, t) => `rgb(${c1.map((v, i) => Math.round(lerp(v, c2[i], t))).join(',')})`;
+  const mix3 = (a, b, c, t) => t < 0.5 ? mix(a, b, t * 2) : mix(b, c, (t - 0.5) * 2);
+  const FACE = '"Helvetica Neue", Arial, "PingFang TC", "Noto Sans TC", sans-serif';
+  const SERIF = 'Georgia, "Times New Roman", serif';
+
+  // ---------- the ramp ----------
+  let W, H, DPR, SAFE_T = 0, PX = [], PY = [], PS = [], total = 0, sStop = 0, C = 5, N = 0, STOP = 0, LW = 6, skyline = [], lamps = [];
+  const LANES = 4, VMAX = 5, P_SLOW = 0.22, TICK = 0.125;
+  function buildRamp() {
+    const port = H > W;
+    const K = port ? [[1.18, 0.22], [0.13, 0.34], [0.87, 0.5], [0.13, 0.66], [0.52, 0.82], [0.52, 1.2]]
+                   : [[1.12, 0.26], [0.18, 0.4], [0.82, 0.56], [0.22, 0.72], [0.5, 0.84], [0.5, 1.25]];
+    const P = K.map(([x, y]) => [x * W, y * H]);
+    PX = []; PY = []; PS = []; total = 0;
+    for (let i = 0; i < P.length - 1; i++) {
+      const p0 = P[Math.max(0, i - 1)], p1 = P[i], p2 = P[i + 1], p3 = P[Math.min(P.length - 1, i + 2)];
+      for (let k = 0; k < 80; k++) {
+        const t = k / 80, t2 = t * t, t3 = t2 * t;
+        const x = 0.5 * (2 * p1[0] + (-p0[0] + p2[0]) * t + (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * t2 + (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * t3);
+        const y = 0.5 * (2 * p1[1] + (-p0[1] + p2[1]) * t + (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * t2 + (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * t3);
+        if (PX.length) total += Math.hypot(x - PX[PX.length - 1], y - PY[PY.length - 1]);
+        PX.push(x); PY.push(y); PS.push(total);
+        if (i === 4 && k === 0) sStop = total;
+      }
+    }
+    C = Math.max(6, Math.min(W, H) * 0.017); LW = C * 1.12;
+    N = Math.floor(total / C); STOP = Math.floor(sStop / C);
+    // a city behind, and lamps along the ramp
+    skyline = []; let x = -10;
+    while (x < W + 10) { const w = rnd(14, 42), h = rnd(0.04, 0.13) * H; skyline.push({ x, w, h, win: Array.from({ length: Math.floor(w * h / 60) }, () => [rnd(0.1, 0.9), rnd(0.1, 0.9), Math.random()]) }); x += w + rnd(0, 6); }
+    lamps = []; for (let s = 40; s < total; s += 120) lamps.push(s);
+  }
+  function at(s) {
+    let lo = 0, hi = PS.length - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (PS[m] < s) lo = m; else hi = m; }
+    const t = (s - PS[lo]) / Math.max(1e-6, PS[hi] - PS[lo]);
+    const dx = PX[hi] - PX[lo], dy = PY[hi] - PY[lo], L = Math.hypot(dx, dy) || 1;
+    return { x: lerp(PX[lo], PX[hi], t), y: lerp(PY[lo], PY[hi], t), tx: dx / L, ty: dy / L };
+  }
+
+  // ---------- the traffic ----------
+  let lanes = [], T = 0, acc = 0, day = 0, day0 = 0, peak = 1, count = 0, green = false, lightT = 0, chordI = 0, noteI = 0, ending = Infinity;
+  const ripples = [];
+  const DAYLEN = 160, GREEN = 11, RED = 9;
+  const COLS = ['#d8d4cc', '#c23b3b', '#3b6fc2', '#3a3a42', '#e0b64a', '#8fb7a4', '#e88aa8', '#f2f2f2', '#5a8a5a', '#d87a3a'];
+  const HELMETS = ['#f2f2f2', '#d93a3a', '#f2c94c', '#3a6ad9', '#222', '#ff8fb8', '#7ed37e'];
+  const WEEK = ['週日 Sunday', '週一 Monday', '週二 Tuesday', '週三 Wednesday', '週四 Thursday', '週五 Friday', '週六 Saturday'];
+  let weekday = 1;
+  const hour = () => 360 + clamp((T - day0) / DAYLEN) * 190;
+  function inflow(h) { return peak * (0.03 + 0.62 * Math.exp(-(((h - 468) / 42) ** 2))); }
+  function newDay() {
+    day++; day0 = T; count = 0; ending = Infinity;
+    weekday = day === 1 ? 1 : weekday === 5 ? 1 : weekday + 1;
+    peak = rnd(0.85, 1.15);
+    lanes = Array.from({ length: LANES }, () => []);
+    green = false; lightT = T; chordI = 0; noteI = 0;
+  }
+  function step() {
+    const h = hour();
+    for (let li = 0; li < LANES; li++) {
+      const L = lanes[li];
+      for (let i = 0; i < L.length; i++) {
+        const v = L[i];
+        let gap = i === 0 ? Infinity : L[i - 1].p - v.p - 1;
+        if (!green && v.p < STOP) gap = Math.min(gap, STOP - 1 - v.p);
+        const before = v.v;
+        v.v = Math.min(v.v + 1, VMAX, gap);
+        if (v.v > 0 && Math.random() < P_SLOW) v.v--;
+        v.brake = v.v < before ? 1 : Math.max(0, v.brake - 0.34);
+      }
+      for (const v of L) {
+        v.prev = v.p; v.p += v.v;
+        if (v.prev < STOP && v.p >= STOP) cross(li, v);
+      }
+      while (L.length && L[0].p >= N) L.shift();
+      if (h < 545 && Math.random() < inflow(h) && (!L.length || L[L.length - 1].p > 1))
+        L.push({ p: 0, prev: 0, v: 2, brake: 0, col: pick(COLS), helmet: pick(HELMETS), rider: Math.random() < 0.15 ? 2 : 1, box: Math.random() < 0.12 ? pick(['#e5176f', '#12a150']) : null });
+    }
+  }
+  // ---------- the music: the Canon's chords, falling ----------
+  const CANON = [[62, 66, 69], [57, 61, 64], [59, 62, 66], [54, 57, 61], [55, 59, 62], [62, 66, 69], [55, 59, 62], [57, 61, 64]];
+  const BASS = [38, 33, 35, 30, 31, 26, 31, 33];
+  let crossedThisTick = 0;
+  function cross(li, v) {
+    count++; crossedThisTick++;
+    if (crossedThisTick > 3) return;
+    const ch = CANON[chordI % 8], flow = clamp(rate / 6, 0, 1), span = 1 + Math.round(flow * 2);
+    const tones = []; for (let o = span; o >= 0; o--) for (let k = 2; k >= 0; k--) tones.push(ch[k] + 12 * o);
+    const m = tones[noteI % tones.length]; noteI++;
+    const lane = (li - (LANES - 1) / 2) * LW, p = at(STOP * C), x = p.x - p.ty * lane, y = p.y + p.tx * lane;
+    ripples.push({ x, y, t: T, m });
+    marimba(m, (crossedThisTick - 1) * TICK / 3, 0.5 + 0.3 * flow, clamp(x / W * 2 - 1, -1, 1) * 0.6);
+  }
+  let rate = 0, rateAcc = [];
+  function update(dt) {
+    T += dt;
+    if (!green && T - lightT > RED) { green = true; lightT = T; chordI++; noteI = 0; bassNote(BASS[chordI % 8]); }
+    else if (green && T - lightT > GREEN) { green = false; lightT = T; }
+    acc += dt;
+    while (acc >= TICK) {
+      acc -= TICK; crossedThisTick = 0; step();
+      rateAcc.push(crossedThisTick); if (rateAcc.length > 16) rateAcc.shift();
+      rate = rateAcc.reduce((a, b) => a + b, 0) / rateAcc.length / TICK / LANES;
+    }
+    for (let i = ripples.length - 1; i >= 0; i--) if (T - ripples[i].t > 1.4) ripples.splice(i, 1);
+    const empty = lanes.every(L => L.length === 0);
+    if (ending === Infinity && hour() > 545 && empty) ending = T + 3;
+    if (T > ending + 2) newDay();
+    idle();
+  }
+
+  // ---------- drawing ----------
+  function draw() {
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    // it never gets past dawn: the lights are the point
+    const h = hour(), d = 0.52 * sstep(370, 520, h), frac = acc / TICK;
+    // sky and city
+    const top = mix3([6, 10, 28], [58, 74, 122], [122, 176, 224], d), low = mix3([26, 31, 58], [240, 160, 128], [216, 232, 240], d);
+    const sky = ctx.createLinearGradient(0, 0, 0, H * 0.2); sky.addColorStop(0, top); sky.addColorStop(1, low);
+    ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H * 0.2);
+    ctx.fillStyle = mix3([11, 13, 22], [40, 40, 52], [84, 92, 102], d); ctx.fillRect(0, H * 0.2, W, H);
+    const base = H * 0.2, bc = mix3([16, 18, 32], [44, 44, 62], [96, 104, 116], d);
+    // the tower, far off
+    const tx = W * 0.72, tw = Math.max(8, H * 0.012), th = H * 0.016;
+    ctx.fillStyle = bc;
+    for (let k = 0; k < 8; k++) { const y = base - H * 0.05 - (k + 1) * th; ctx.beginPath(); ctx.moveTo(tx - tw * 0.8, y + th); ctx.lineTo(tx - tw, y); ctx.lineTo(tx + tw, y); ctx.lineTo(tx + tw * 0.8, y + th); ctx.fill(); }
+    ctx.fillRect(tx - tw * 0.8, base - H * 0.05, tw * 1.6, H * 0.05); ctx.fillRect(tx - 1, base - H * 0.05 - 8 * th - th * 2.2, 2, th * 2.2);
+    if (Math.sin(T * 3) > 0.5 && d < 0.7) { ctx.fillStyle = '#ff3a3a'; ctx.fillRect(tx - 1.5, base - H * 0.05 - 8 * th - th * 2.2, 3, 3); }
+    for (const b of skyline) {
+      ctx.fillStyle = bc; ctx.fillRect(b.x, base - b.h, b.w, b.h);
+      for (const [wx, wy, r] of b.win) { if (r > 0.55 + d * 0.45) { ctx.fillStyle = 'rgba(255,214,140,0.8)'; ctx.fillRect(b.x + wx * b.w, base - b.h + wy * b.h, 2, 2); } }
+    }
+    // the deck, its rails, its lane lines
+    const deckW = LW * LANES + C * 1.4;
+    ctx.lineJoin = 'round'; ctx.lineCap = 'butt';
+    ctx.strokeStyle = mix3([30, 32, 40], [58, 58, 70], [118, 120, 126], d); ctx.lineWidth = deckW + 4;
+    ctx.beginPath(); ctx.moveTo(PX[0], PY[0]); for (let i = 1; i < PX.length; i++) ctx.lineTo(PX[i], PY[i]); ctx.stroke();
+    ctx.strokeStyle = mix3([22, 24, 30], [46, 46, 56], [92, 94, 100], d); ctx.lineWidth = deckW;
+    ctx.stroke();
+    ctx.setLineDash([C * 1.2, C * 2]); ctx.lineWidth = 1; ctx.strokeStyle = `rgba(230,230,220,${0.12 + d * 0.2})`;
+    for (let k = 1; k < LANES; k++) {
+      const off = (k - LANES / 2) * LW;
+      ctx.beginPath();
+      for (let i = 0; i < PX.length; i += 2) { const j = Math.min(PX.length - 2, i), dx = PX[j + 1] - PX[j], dy = PY[j + 1] - PY[j], L = Math.hypot(dx, dy) || 1; const x = PX[i] - dy / L * off, y = PY[i] + dx / L * off; if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); }
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    // street lamps
+    for (const s of lamps) {
+      const p = at(s), ox = -p.ty * (deckW / 2 + 3), oy = p.tx * (deckW / 2 + 3), on = 1 - sstep(440, 480, h);
+      ctx.fillStyle = `rgba(255,220,160,${0.1 * on})`; ctx.beginPath(); ctx.arc(p.x + ox, p.y + oy, C * 1.5, 0, TAU); ctx.fill();
+      ctx.fillStyle = on > 0.1 ? `rgba(255,232,190,${0.4 + 0.6 * on})` : '#888'; ctx.beginPath(); ctx.arc(p.x + ox, p.y + oy, 1.6, 0, TAU); ctx.fill();
+    }
+    // stop line and the light
+    const sp = at(STOP * C), nx = -sp.ty, ny = sp.tx;
+    ctx.strokeStyle = `rgba(240,240,235,${0.5 + d * 0.3})`; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(sp.x + nx * deckW / 2, sp.y + ny * deckW / 2); ctx.lineTo(sp.x - nx * deckW / 2, sp.y - ny * deckW / 2); ctx.stroke();
+    const lx = sp.x + nx * (deckW / 2 + C * 2.5), ly = sp.y + ny * (deckW / 2 + C * 2.5);
+    ctx.fillStyle = '#16161a'; ctx.fillRect(lx - C * 0.9, ly - C * 2, C * 1.8, C * 4);
+    const lc = green ? [80, 255, 140] : [255, 60, 60], ly2 = green ? ly + C * 1.05 : ly - C * 1.05;
+    ctx.fillStyle = `rgba(${lc},0.12)`; ctx.beginPath(); ctx.arc(lx, ly2, C * 3.2, 0, TAU); ctx.fill();
+    ctx.fillStyle = `rgb(${lc})`; ctx.beginPath(); ctx.arc(lx, ly2, C * 0.65, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#2a2a30'; ctx.beginPath(); ctx.arc(lx, green ? ly - C * 1.05 : ly + C * 1.05, C * 0.6, 0, TAU); ctx.fill();
+    // ripples where they crossed
+    for (const r of ripples) { const k = (T - r.t) / 1.4; ctx.strokeStyle = `hsla(${(r.m * 30) % 360},80%,70%,${(1 - k) * (1 - k) * 0.55})`; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(r.x, r.y, C * (0.5 + k * 2.6), 0, TAU); ctx.stroke(); }
+    // the scooters: lights at night, riders by day
+    const head = 1 - d * 0.65;
+    for (let li = 0; li < LANES; li++) {
+      const off = (li - (LANES - 1) / 2) * LW;
+      for (const v of lanes[li]) {
+        const s = lerp(v.prev, v.p, frac) * C;
+        if (s > total) continue;
+        const p = at(s), x = p.x - p.ty * off, y = p.y + p.tx * off, a = Math.atan2(p.ty, p.tx);
+        ctx.save(); ctx.translate(x, y); ctx.rotate(a);
+        if (d > 0.15) {
+          ctx.globalAlpha = sstep(0.15, 0.6, d);
+          ctx.fillStyle = v.col; ctx.beginPath(); ctx.ellipse(0, 0, C * 0.62, C * 0.26, 0, 0, TAU); ctx.fill();
+          if (v.box) { ctx.fillStyle = v.box; ctx.fillRect(-C * 0.7, -C * 0.25, C * 0.42, C * 0.5); }
+          ctx.fillStyle = v.helmet; ctx.beginPath(); ctx.arc(-C * 0.05, 0, C * 0.22, 0, TAU); ctx.fill();
+          if (v.rider > 1) { ctx.fillStyle = '#e8e8e8'; ctx.beginPath(); ctx.arc(-C * 0.38, 0, C * 0.19, 0, TAU); ctx.fill(); }
+          ctx.globalAlpha = 1;
+        }
+        ctx.fillStyle = `rgba(255,236,190,${0.13 * head})`; ctx.beginPath(); ctx.arc(C * 0.75, 0, C * 0.9, 0, TAU); ctx.fill();
+        ctx.fillStyle = `rgba(255,246,220,${0.5 + 0.5 * head})`; ctx.beginPath(); ctx.arc(C * 0.6, 0, C * 0.17, 0, TAU); ctx.fill();
+        const br = v.brake;
+        if (br > 0.05) { ctx.fillStyle = `rgba(255,40,40,${0.18 * br})`; ctx.beginPath(); ctx.arc(-C * 0.62, 0, C * 0.75, 0, TAU); ctx.fill(); }
+        ctx.fillStyle = `rgba(255,${40 + 30 * (1 - br)},${40 + 30 * (1 - br)},${0.5 + 0.5 * Math.max(br, 0.4 * head)})`; ctx.beginPath(); ctx.arc(-C * 0.6, 0, C * (0.12 + 0.05 * br), 0, TAU); ctx.fill();
+        ctx.restore();
+      }
+    }
+    // the hour, the count
+    const mins = Math.floor(h), hh = Math.floor(mins / 60), mm = mins % 60;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    const ink = d > 0.75 ? '#1a1e28' : '#f4ead8', inkSoft = d > 0.75 ? 'rgba(26,30,40,0.7)' : 'rgba(244,234,216,0.7)';
+    ctx.fillStyle = ink; ctx.font = `600 22px ${FACE}`; ctx.fillText(`${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`, 18, SAFE_T + 34);
+    ctx.fillStyle = inkSoft; ctx.font = `13px ${FACE}`; ctx.fillText(`${count.toLocaleString('en-US')} scooters`, 18, SAFE_T + 54);
+    const k = T - day0;
+    if (k < 8) {
+      ctx.globalAlpha = Math.min(1, k * 1.5, (8 - k) * 1.2);
+      ctx.textAlign = 'right'; ctx.fillStyle = ink;
+      ctx.font = `600 ${Math.round(clamp(W * 0.07, 22, 34))}px ${FACE}`; ctx.fillText('機車瀑布', W - 18, SAFE_T + 36);
+      ctx.font = `italic 14px ${SERIF}`; ctx.fillStyle = inkSoft; ctx.fillText(day === 1 ? 'Taipei Bridge, every weekday morning' : WEEK[weekday], W - 18, SAFE_T + 58);
+      ctx.globalAlpha = 1;
+    }
+    if (T > ending) { ctx.fillStyle = `rgba(6,10,28,${clamp((T - ending) / 2)})`; ctx.fillRect(0, 0, W, H); }
+    if (k < 1.5) { ctx.fillStyle = `rgba(6,10,28,${1 - k / 1.5})`; ctx.fillRect(0, 0, W, H); }
+  }
+
+  // ---------- sound ----------
+  let AC = null, master, verb, noise, idleG = null, soundOn = false;
+  const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
+  const live = () => AC && soundOn;
+  function initAudio() {
+    AC = new (window.AudioContext || window.webkitAudioContext)();
+    master = AC.createGain(); master.gain.value = 0;
+    const comp = AC.createDynamicsCompressor(); comp.threshold.value = -18; comp.ratio.value = 3;
+    master.connect(comp); comp.connect(AC.destination);
+    const sr = AC.sampleRate, len = Math.floor(sr * 2.4), ir = AC.createBuffer(2, len, sr);
+    for (let ch = 0; ch < 2; ch++) { const dd = ir.getChannelData(ch); for (let i = 0; i < len; i++) dd[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6); }
+    verb = AC.createConvolver(); verb.buffer = ir;
+    const vg = AC.createGain(); vg.gain.value = 0.35; verb.connect(vg); vg.connect(master);
+    noise = AC.createBuffer(1, Math.floor(sr * 2), sr);
+    const nd = noise.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+    const src = AC.createBufferSource(), lp = AC.createBiquadFilter(); src.buffer = noise; src.loop = true; lp.type = 'lowpass'; lp.frequency.value = 140;
+    idleG = AC.createGain(); idleG.gain.value = 0; src.connect(lp); lp.connect(idleG); idleG.connect(master); src.start();
+  }
+  function out(vel, pan) { const g = AC.createGain(); g.gain.value = vel; let o = g; if (AC.createStereoPanner) { const p = AC.createStereoPanner(); p.pan.value = pan; g.connect(p); o = p; } o.connect(master); o.connect(verb); return g; }
+  // a marimba-ish bar: the fundamental, a bright fourth partial that dies fast, a soft knock
+  function marimba(m, delay, vel, pan) {
+    if (!live()) return;
+    const t = AC.currentTime + 0.02 + delay, f = mtof(m), o = out(vel, pan);
+    for (const [mul, g0, dur] of [[1, 0.09, 1.1], [4, 0.025, 0.18], [2.01, 0.02, 0.5]]) {
+      const x = AC.createOscillator(), g = AC.createGain(); x.type = 'sine'; x.frequency.value = f * mul;
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(g0, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      x.connect(g); g.connect(o); x.start(t); x.stop(t + dur + 0.02);
+    }
+  }
+  function bassNote(m) {
+    if (!live()) return;
+    const t = AC.currentTime + 0.02, o = out(0.5, 0);
+    for (const [mul, g0] of [[1, 0.12], [2, 0.04]]) { const x = AC.createOscillator(), g = AC.createGain(); x.type = 'sine'; x.frequency.value = mtof(m) * mul; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(g0, t + 0.08); g.gain.exponentialRampToValueAtTime(0.0001, t + 3.2); x.connect(g); g.connect(o); x.start(t); x.stop(t + 3.3); }
+  }
+  let idleLast = -1;
+  function idle() {
+    if (!live()) return;
+    let stopped = 0; for (const L of lanes) for (const v of L) if (v.v === 0) stopped++;
+    const g = Math.round(Math.min(0.05, stopped * 0.0006) * 1000) / 1000;
+    if (g !== idleLast) { idleG.gain.setTargetAtTime(g, AC.currentTime, 0.5); idleLast = g; }
+  }
+  addEventListener('pointerdown', () => {
+    if (!AC) initAudio();
+    if (AC.state === 'suspended') AC.resume();
+    soundOn = !soundOn;
+    master.gain.setTargetAtTime(soundOn ? 1.2 : 0, AC.currentTime, 0.2);
+    document.getElementById('hint').hidden = true;
+  });
+
+  function layout() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = innerWidth; H = innerHeight;
+    cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+    SAFE_T = parseFloat(getComputedStyle(document.getElementById('safe')).paddingTop) || 0;
+    buildRamp(); newDay();
+  }
+  let last = performance.now(), resizeT = 0;
+  function frame(t) {
+    const dt = clamp((t - last) / 1000, 0, 0.05);
+    last = t;
+    update(dt); draw();
+    requestAnimationFrame(frame);
+  }
+  addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(layout, 300); });
+  layout();
+  window.__falls = () => ({ T: +T.toFixed(1), day, hour: Math.round(hour()), count, green, rate: +rate.toFixed(2), onRamp: lanes.reduce((a, L) => a + L.length, 0), stopped: lanes.reduce((a, L) => a + L.filter(v => v.v === 0).length, 0), N, STOP });
+  try { navigator.wakeLock?.request('screen').catch(() => {}); } catch (e) {}
+  requestAnimationFrame(frame);
+})();
+</script>
+
+</body>
+</html>
