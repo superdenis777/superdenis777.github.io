@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ten Thousand Things</title>
+<meta name="description" content="A dark field of dust that listens. Tap, then speak or sing: your voice gathers the dust into living things, coloured by the vowel and placed by the note. Then they live by their own laws and return to dust.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Ten Thousand Things">
+<meta property="og:description" content="A dark field of dust that listens. Tap, then speak or sing: your voice gathers the dust into living things, coloured by the vowel and placed by the note. Then they live by their own laws and return to dust.">
+<meta property="og:url" content="https://superdenis777.github.io/ten-thousand-things/">
+<meta property="og:image" content="https://superdenis777.github.io/ten-thousand-things/preview.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#040405">
+<style>
+  /* Layout: one endless dark field of dust, no interface. Tap once and speak or sing: the voice gathers dust into living things, coloured by the vowel and placed around a circle by the note; consonants scatter. The named things live by their own laws and in time return to dust. Single-theme dark. */
+  :root { color-scheme: dark; }
+  html, body { height: 100%; background: #040405; }
+  body { margin: 0; overflow: hidden; touch-action: none; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: pointer; }
+  #hint { position: fixed; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom, 0px) + 20px); text-align: center; font: italic 15px/1.2 Georgia, 'Times New Roman', serif; letter-spacing: 0.04em; color: #ece5d5; opacity: 0; pointer-events: none; animation: hint 8s ease-in-out 1.5s forwards; }
+  @keyframes hint { 0% { opacity: 0; } 20% { opacity: 0.6; } 75% { opacity: 0.6; } 100% { opacity: 0; } }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="A dark field of faint dust that listens. Tap once to let it hear you through the microphone, then speak or sing. Wherever your voice is, the dust streams in and lights up into living points of colour: the note you sing decides where, around a circle like a clock of the twelve notes, and the vowel decides the colour, from deep blue for oo to amber and rose for ee. Hissing consonants blow the dust apart. The lit points then move by their own laws, each colour drawn to or away from the others, forming drifting clusters, and after a minute or two each one fades and drifts back out into the dust. When you fall silent, the notes you sang hum back softly. Without the microphone it murmurs to itself and names things on its own."></canvas>
+<div id="hint">tap, then speak or sing</div>
+
+<script>
+(() => {
+  'use strict';
+  const cv = document.getElementById('c');
+  const ctx = cv.getContext('2d');
+  const TAU = Math.PI * 2, K = 6;
+  const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const gauss = () => (Math.random() + Math.random() + Math.random() + Math.random() - 2) * 1.732;
+  function hsl(h, s, l) {
+    h = (((h % 360) + 360) % 360) / 360;
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
+    const f = t => { t = (t + 1) % 1; return t < 1 / 6 ? p + (q - p) * 6 * t : t < 1 / 2 ? q : t < 2 / 3 ? p + (q - p) * (2 / 3 - t) * 6 : p; };
+    return [f(h + 1 / 3), f(h), f(h - 1 / 3)].map(v => Math.round(v * 255));
+  }
+  const css = c => c[0] + ',' + c[1] + ',' + c[2];
+
+  // the vowels' colours, dark to bright: oo, o, ah, eh, ay, ee
+  const COLS = [252, 208, 172, 136, 40, 352].map(h => hsl(h, 0.72, 0.66));
+
+  // ---------- the field ----------
+  let W = 0, H = 0, U = 1, DPR = 1, CR = 1.4, GR = 6;
+  let N = 0, X, Y, VX, VY, KD, AGE, LIFE, FL, nxt;
+  let named = 0, T = 0, budget = 0;
+  let M = Array.from({ length: K }, () => Array.from({ length: K }, () => rnd(-1, 1)));
+  let sprites = [];
+  const tally = { named: 0, returned: 0 };
+
+  function makeSprites() {
+    const sz = Math.ceil(GR * 2 * DPR);
+    sprites = COLS.map(col => {
+      const c = document.createElement('canvas'); c.width = c.height = sz;
+      const g = c.getContext('2d'), r = sz / 2, grd = g.createRadialGradient(r, r, 0, r, r, r);
+      grd.addColorStop(0, 'rgba(' + css(col) + ',0.85)'); grd.addColorStop(0.3, 'rgba(' + css(col) + ',0.3)'); grd.addColorStop(1, 'rgba(' + css(col) + ',0)');
+      g.fillStyle = grd; g.fillRect(0, 0, sz, sz);
+      return c;
+    });
+  }
+
+  let CS = 1, GW = 1, GH = 1, head = new Int32Array(1);
+  function setupGrid() { CS = U * 0.065; GW = Math.ceil(W / CS) + 1; GH = Math.ceil(H / CS) + 1; head = new Int32Array(GW * GH); }
+  function buildGrid() {
+    head.fill(-1);
+    for (let i = 0; i < N; i++) {
+      if (KD[i] < 0) continue;
+      const c = clamp(Math.floor(Y[i] / CS), 0, GH - 1) * GW + clamp(Math.floor(X[i] / CS), 0, GW - 1);
+      nxt[i] = head[c]; head[c] = i;
+    }
+  }
+
+  function size() {
+    const oW = W, oH = H;
+    DPR = Math.min(devicePixelRatio || 1, 2);
+    W = innerWidth; H = innerHeight; U = Math.min(W, H);
+    cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    CR = clamp(U * 0.0019, 1, 1.8); GR = clamp(U * 0.012, 5, 10);
+    makeSprites(); setupGrid();
+    if (!N) {
+      const area = clamp((W * H) / (390 * 844), 0.7, 4.5);
+      N = Math.round(clamp(1500 * Math.sqrt(area), 1300, 3000));
+      X = new Float32Array(N); Y = new Float32Array(N); VX = new Float32Array(N); VY = new Float32Array(N);
+      AGE = new Float32Array(N); LIFE = new Float32Array(N); FL = new Float32Array(N);
+      KD = new Int8Array(N).fill(-1); nxt = new Int32Array(N);
+      for (let i = 0; i < N; i++) { X[i] = rnd(0, W); Y[i] = rnd(0, H); }
+    } else if (oW) {
+      const sx = W / oW, sy = H / oH;
+      for (let i = 0; i < N; i++) { X[i] *= sx; Y[i] *= sy; }
+    }
+  }
+
+  // ---------- the voice ----------
+  const voice = { mode: 'inner', L: 0, voiced: false, unvoiced: false, pc: 0, f0: 0, bright: 0.5, nf: -60 };
+  let actx = null, analyser = null, micStream = null, tbuf = null, fbuf = null;
+  const dec = new Float32Array(1024), yb = new Float32Array(420);
+
+  function listen(dt) {
+    analyser.getFloatTimeDomainData(tbuf);
+    let s = 0; for (let i = 0; i < tbuf.length; i++) s += tbuf[i] * tbuf[i];
+    const db = 10 * Math.log10(s / tbuf.length + 1e-12);
+    // the room's own hum: the floor falls fast and rises slowly
+    voice.nf = db < voice.nf ? lerp(voice.nf, db, clamp(dt * 3)) : Math.min(voice.nf + dt * 0.7, -30);
+    voice.nf = Math.max(voice.nf, -90);
+    const gate = 9 + (strings.out > 0.02 ? 8 : 0);
+    const Lr = clamp((db - voice.nf - gate) / 26);
+    voice.L = Lr > voice.L ? lerp(voice.L, Lr, clamp(dt * 30)) : lerp(voice.L, Lr, clamp(dt * 7));
+
+    // pitch: a small YIN on every other sample
+    const sr2 = actx.sampleRate / 2;
+    for (let i = 0; i < 1024; i++) dec[i] = tbuf[2 * i];
+    const tmin = Math.max(2, Math.floor(sr2 / 900)), tmax = Math.min(yb.length - 2, Math.floor(sr2 / 65)), n = 1024 - tmax;
+    let run = 0, tau = -1;
+    yb[0] = 1;
+    for (let t = 1; t <= tmax + 1; t++) {
+      let d = 0;
+      for (let i = 0; i < n; i++) { const q = dec[i] - dec[i + t]; d += q * q; }
+      run += d;
+      yb[t] = run > 0 ? (d * t) / run : 1;
+    }
+    for (let t = tmin; t <= tmax; t++) if (yb[t] < 0.18) { while (t < tmax && yb[t + 1] < yb[t]) t++; if (t < tmax - 1) tau = t; break; }
+    let clar = 0, f0 = 0;
+    if (tau > 0) {
+      const a = yb[tau - 1], b = yb[tau], c = yb[tau + 1], den = a + c - 2 * b;
+      f0 = sr2 / (tau + (den ? (0.5 * (a - c)) / den : 0));
+      clar = 1 - b;
+    }
+    // brightness: the vowel's colour
+    analyser.getFloatFrequencyData(fbuf);
+    const bw = actx.sampleRate / analyser.fftSize;
+    let sm = 0, sw = 0;
+    for (let i = Math.ceil(100 / bw); i < Math.min(fbuf.length, 6000 / bw); i++) { const m = Math.pow(10, fbuf[i] / 20); sm += m; sw += m * i * bw; }
+    const cen = sm > 0 ? sw / sm : 0;
+    voice.voiced = voice.L > 0.05 && clar > 0.65 && f0 > 65 && f0 < 900;
+    voice.unvoiced = voice.L > 0.08 && !voice.voiced && cen > 2500;
+    if (voice.voiced) {
+      voice.f0 = f0;
+      voice.pc = (((12 * Math.log2(f0 / 16.3516)) % 12) + 12) % 12;
+      voice.bright = lerp(voice.bright, clamp((cen - 1050) / 750), clamp(dt * 10));
+    }
+  }
+
+  // without a microphone it murmurs to itself
+  const iv = { on: false, next: 3, end: 0, st: 0, sd: 0.2, base: rnd(0, 12), cont: 0, b: 0.5, amp: 0.6, cons: false };
+  function syllable() {
+    iv.st = 0; iv.sd = rnd(0.16, 0.34); iv.cons = Math.random() < 0.15;
+    iv.cont = clamp(iv.cont + gauss() * 0.7 - 0.08, -3, 3);
+    iv.b = clamp(iv.b + gauss() * 0.3); iv.amp = rnd(0.5, 1);
+  }
+  function murmur(dt) {
+    let L = 0;
+    if (!iv.on && T > iv.next) { iv.on = true; iv.end = T + rnd(1.6, 4.2); iv.base = (iv.base + gauss() * 2.5 + 12) % 12; iv.cont = 0; syllable(); }
+    if (iv.on) {
+      iv.st += dt;
+      if (iv.st > iv.sd) syllable();
+      const env = iv.st < 0.035 ? iv.st / 0.035 : Math.exp(-(iv.st - 0.035) * 6);
+      L = iv.amp * env * (iv.cons ? 0.6 : 1);
+      if (T > iv.end) { iv.on = false; iv.next = T + rnd(4, 11); }
+    }
+    voice.L = lerp(voice.L, L, clamp(dt * 25));
+    voice.voiced = iv.on && !iv.cons && voice.L > 0.05;
+    voice.unvoiced = iv.on && iv.cons && voice.L > 0.08;
+    if (voice.voiced) { voice.pc = (iv.base + iv.cont + 12) % 12; voice.bright = lerp(voice.bright, iv.b, clamp(dt * 10)); }
+  }
+
+  // where the voice is: around a circle by the note (C at the top), farther out the louder
+  const vp = { a: -Math.PI / 2, r: 0, x: 0, y: 0, glow: 0, kind: 2 };
+  function steer(dt) {
+    if (voice.voiced) {
+      const ta = -Math.PI / 2 + (voice.pc / 12) * TAU;
+      let da = (ta - vp.a + Math.PI) % TAU; if (da < 0) da += TAU; da -= Math.PI;
+      vp.a += da * clamp(dt * 9);
+      vp.r = lerp(vp.r, U * (0.1 + 0.24 * voice.L), clamp(dt * 6));
+      vp.kind = clamp(Math.floor(voice.bright * K), 0, K - 1);
+    }
+    vp.glow = lerp(vp.glow, voice.voiced ? voice.L : voice.unvoiced ? voice.L * 0.5 : 0, clamp(dt * 8));
+    vp.x = W / 2 + Math.cos(vp.a) * vp.r; vp.y = H / 2 + Math.sin(vp.a) * vp.r;
+  }
+
+  // ---------- one step ----------
+  function force(r, a) { return r < 0.3 ? r / 0.3 - 1 : r < 1 ? a * (1 - Math.abs(2 * r - 1.3) / 0.7) : 0; }
+
+  function ignite(i) {
+    KD[i] = vp.kind; AGE[i] = 0; LIFE[i] = rnd(45, 100); FL[i] = 1;
+    VX[i] = gauss() * U * 0.05; VY[i] = gauss() * U * 0.05;
+    named++; tally.named++;
+  }
+  function release(i) {
+    // back to the nameless, drifting out into the dark
+    KD[i] = -1; named--; tally.returned++; FL[i] = 0.3;
+    const dx = X[i] - W / 2, dy = Y[i] - H / 2, d = Math.hypot(dx, dy) || 1;
+    VX[i] += (dx / d) * U * 0.06; VY[i] += (dy / d) * U * 0.06;
+  }
+  function edges(i, dt) {
+    const m = U * 0.02;
+    if (X[i] < m) VX[i] += (m - X[i]) * 3 * dt; else if (X[i] > W - m) VX[i] -= (X[i] - W + m) * 3 * dt;
+    if (Y[i] < m) VY[i] += (m - Y[i]) * 3 * dt; else if (Y[i] > H - m) VY[i] -= (Y[i] - H + m) * 3 * dt;
+  }
+
+  function update(dt) {
+    T += dt;
+    if (voice.mode === 'mic' && analyser) listen(dt); else murmur(dt);
+    steer(dt);
+    strings.step(dt);
+    const L = voice.L, gather = voice.voiced, scatter = voice.unvoiced;
+    const dr = 0.025 * Math.sqrt(dt);
+    for (let a = 0; a < K; a++) for (let b = 0; b < K; b++) M[a][b] = clamp(M[a][b] + gauss() * dr, -1, 1);
+
+    const Rg = U * (0.08 + 0.22 * L), Rg2 = Rg * Rg, pull = U * 1.4 * L;
+    const Rs = U * (0.06 + 0.2 * L), Rs2 = Rs * Rs, push = U * 2.2 * L;
+    const rIgn = U * 0.02, cap = N * 0.7, vmax = U * 0.35;
+    budget = gather ? Math.min(20, budget + dt * 170 * L) : 0;
+
+    // the nameless: dust, drifting; called by a voice, it streams in
+    const dd = Math.exp(-0.6 * dt), dn = U * 0.015 * Math.sqrt(dt);
+    for (let i = 0; i < N; i++) {
+      if (KD[i] >= 0) continue;
+      VX[i] = VX[i] * dd + gauss() * dn; VY[i] = VY[i] * dd + gauss() * dn;
+      FL[i] *= Math.exp(-3 * dt);
+      if (gather || scatter) {
+        const dx = vp.x - X[i], dy = vp.y - Y[i], d2 = dx * dx + dy * dy;
+        if (gather && d2 < Rg2) {
+          const d = Math.sqrt(d2) || 1, k = 1 - d / Rg;
+          VX[i] += (dx / d) * pull * k * dt; VY[i] += (dy / d) * pull * k * dt;
+          FL[i] = Math.max(FL[i], k);
+          if (d < rIgn && budget >= 1 && named < cap) { budget--; ignite(i); continue; }
+        } else if (scatter && d2 < Rs2) {
+          const d = Math.sqrt(d2) || 1, k = 1 - d / Rs;
+          VX[i] -= (dx / d) * push * k * dt; VY[i] -= (dy / d) * push * k * dt;
+          FL[i] = Math.max(FL[i], 0.6 * k);
+        }
+      }
+      const sp = Math.hypot(VX[i], VY[i]); if (sp > vmax) { VX[i] *= vmax / sp; VY[i] *= vmax / sp; }
+      edges(i, dt);
+    }
+
+    // the named: living by their own laws, each colour drawn to or away from the others
+    buildGrid();
+    const R = U * 0.065, R2 = R * R, FR = Math.pow(0.5, dt / 0.07), Fk = U * 0.5;
+    for (let i = 0; i < N; i++) {
+      const k = KD[i]; if (k < 0) continue;
+      const x = X[i], y = Y[i], Mi = M[k];
+      let ax = 0, ay = 0;
+      const cx = clamp(Math.floor(x / CS), 0, GW - 1), cy = clamp(Math.floor(y / CS), 0, GH - 1);
+      for (let gy = Math.max(0, cy - 1); gy <= Math.min(GH - 1, cy + 1); gy++)
+        for (let gx = Math.max(0, cx - 1); gx <= Math.min(GW - 1, cx + 1); gx++)
+          for (let j = head[gy * GW + gx]; j !== -1; j = nxt[j]) {
+            if (j === i) continue;
+            const dx = X[j] - x, dy = Y[j] - y, d2 = dx * dx + dy * dy;
+            if (d2 > R2 || d2 === 0) continue;
+            const d = Math.sqrt(d2), f = force(d / R, Mi[KD[j]]) / d;
+            ax += dx * f; ay += dy * f;
+          }
+      ax = ax * Fk + (W / 2 - x) * 0.12; ay = ay * Fk + (H / 2 - y) * 0.12;
+      if (scatter) {
+        const dx = vp.x - x, dy = vp.y - y, d2 = dx * dx + dy * dy;
+        if (d2 < Rs2) { const d = Math.sqrt(d2) || 1, q = 1 - d / Rs; ax -= (dx / d) * push * q; ay -= (dy / d) * push * q; }
+      }
+      VX[i] = VX[i] * FR + ax * dt; VY[i] = VY[i] * FR + ay * dt;
+      const sp = Math.hypot(VX[i], VY[i]); if (sp > vmax) { VX[i] *= vmax / sp; VY[i] *= vmax / sp; }
+      edges(i, dt);
+      AGE[i] += dt; FL[i] *= Math.exp(-2.5 * dt);
+      if (AGE[i] > LIFE[i]) release(i);
+    }
+    for (let i = 0; i < N; i++) { X[i] += VX[i] * dt; Y[i] += VY[i] * dt; }
+  }
+
+  // ---------- drawing ----------
+  function glow(x, y, r, c, a) {
+    if (a <= 0.003 || r <= 0) return;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, 'rgba(' + c + ',' + a + ')'); g.addColorStop(0.35, 'rgba(' + c + ',' + a * 0.3 + ')'); g.addColorStop(1, 'rgba(' + c + ',0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+  }
+  function draw() {
+    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+    ctx.fillStyle = '#040405'; ctx.fillRect(0, 0, W, H);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = 'rgba(236,229,213,0.17)';
+    for (let i = 0; i < N; i++) if (KD[i] < 0 && FL[i] < 0.15) ctx.fillRect(X[i], Y[i], 1, 1);
+    ctx.fillStyle = 'rgba(' + css(COLS[vp.kind]) + ',0.6)';
+    for (let i = 0; i < N; i++) if (KD[i] < 0 && FL[i] >= 0.15) ctx.fillRect(X[i] - 0.5, Y[i] - 0.5, 1.6, 1.6);
+    for (let k = 0; k < K; k++) {
+      for (const [lo, hi, a] of [[0, 0.4, 0.3], [0.4, 0.75, 0.6], [0.75, 2, 0.95]]) {
+        ctx.fillStyle = 'rgba(' + css(COLS[k]) + ',' + a + ')';
+        ctx.beginPath();
+        for (let i = 0; i < N; i++) {
+          if (KD[i] !== k) continue;
+          const v = Math.min(1, AGE[i] / 0.8, (LIFE[i] - AGE[i]) / 10);
+          if (v < lo || v >= hi) continue;
+          ctx.moveTo(X[i] + CR, Y[i]); ctx.arc(X[i], Y[i], CR, 0, TAU);
+        }
+        ctx.fill();
+      }
+    }
+    for (let i = 0; i < N; i++) {
+      if (KD[i] < 0 || FL[i] < 0.05) continue;
+      const r = GR * (1 + FL[i]);
+      ctx.globalAlpha = FL[i] * 0.8;
+      ctx.drawImage(sprites[KD[i]], X[i] - r, Y[i] - r, 2 * r, 2 * r);
+    }
+    ctx.globalAlpha = 1;
+    if (vp.glow > 0.01) {
+      const c = css(COLS[vp.kind]);
+      glow(vp.x, vp.y, U * 0.035 * (1 + vp.glow), voice.unvoiced ? '236,229,213' : c, 0.45 * vp.glow);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(' + (voice.unvoiced ? '236,229,213' : c) + ',' + (0.08 * vp.glow).toFixed(3) + ')';
+      ctx.beginPath(); ctx.arc(vp.x, vp.y, U * (0.08 + 0.22 * voice.L), 0, TAU); ctx.stroke();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  // ---------- sound: only in the silences, the notes you sang hum back ----------
+  const strings = {
+    on: false, g: [], E: new Float32Array(12), duck: 0, out: 0, master: null, last: 0,
+    init() {
+      if (this.master) return;
+      const comp = actx.createDynamicsCompressor(); comp.connect(actx.destination);
+      this.master = actx.createGain(); this.master.gain.value = 0; this.master.connect(comp);
+      for (let c = 0; c < 12; c++) {
+        const g = actx.createGain(); g.gain.value = 0; g.connect(this.master);
+        const f = 130.81 * Math.pow(2, c / 12);
+        [[1, 'sine', 1], [2, 'triangle', 0.25]].forEach(([m, type, lvl]) => {
+          const o = actx.createOscillator(), gg = actx.createGain();
+          o.type = type; o.frequency.value = f * m; gg.gain.value = lvl;
+          o.connect(gg); gg.connect(g); o.start();
+        });
+        this.g.push(g);
+      }
+    },
+    step(dt) {
+      const E = this.E;
+      if (voice.voiced) {
+        const c = Math.round(voice.pc) % 12, f = (c + 7) % 12;
+        E[c] = Math.min(1.5, E[c] + voice.L * dt * 1.6);
+        E[f] = Math.min(1, E[f] + voice.L * dt * 0.4);
+      }
+      const decay = Math.exp(-dt / 7);
+      for (let c = 0; c < 12; c++) E[c] *= decay;
+      const act = voice.voiced || voice.unvoiced ? 1 : 0;
+      this.duck = lerp(this.duck, act, clamp(dt * (act ? 20 : 1.2)));
+      if (!this.on || !this.master || T - this.last < 0.08) return;
+      this.last = T;
+      let o = 0;
+      for (let c = 0; c < 12; c++) {
+        const v = 0.07 * Math.min(1, E[c]) * (1 - this.duck);
+        this.g[c].gain.setTargetAtTime(v, actx.currentTime, 0.15); o += v;
+      }
+      this.out = o;
+    }
+  };
+
+  // one tap: listen and answer; another: stop
+  let listening = false;
+  async function start() {
+    const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+    if (!actx) actx = new AC();
+    actx.resume().catch(() => {});
+    strings.init(); strings.on = true;
+    strings.master.gain.setTargetAtTime(0.9, actx.currentTime, 0.5);
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: false } });
+      if (!listening) { micStream.getTracks().forEach(t => t.stop()); micStream = null; return; }
+      const src = actx.createMediaStreamSource(micStream);
+      analyser = actx.createAnalyser(); analyser.fftSize = 2048; analyser.smoothingTimeConstant = 0;
+      src.connect(analyser);
+      tbuf = new Float32Array(analyser.fftSize); fbuf = new Float32Array(analyser.frequencyBinCount);
+      voice.mode = 'mic'; voice.nf = -60;
+    } catch (e) { voice.mode = 'inner'; }
+  }
+  function stop() {
+    if (micStream) micStream.getTracks().forEach(t => t.stop());
+    micStream = null; analyser = null; voice.mode = 'inner';
+    strings.on = false;
+    if (strings.master) { strings.master.gain.setTargetAtTime(0, actx.currentTime, 0.3); strings.g.forEach(g => g.gain.setTargetAtTime(0, actx.currentTime, 0.3)); }
+  }
+  cv.addEventListener('pointerdown', () => { listening = !listening; if (listening) start(); else stop(); });
+
+  // ---------- run ----------
+  let last = performance.now();
+  function loop(now) {
+    const dt = clamp((now - last) / 1000, 0, 0.05); last = now;
+    update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+  // for testing from outside; nothing on screen
+  window.__ttt = {
+    ff(sec, h = 1 / 30) { for (let t = 0; t < sec; t += h) update(h); draw(); },
+    stats() {
+      return {
+        T: +T.toFixed(1), mode: voice.mode, L: +voice.L.toFixed(2), voiced: voice.voiced, unvoiced: voice.unvoiced,
+        f0: +voice.f0.toFixed(1), pc: +voice.pc.toFixed(2), bright: +voice.bright.toFixed(2), kind: vp.kind, nf: +voice.nf.toFixed(1),
+        named, N, tally: { ...tally }, strings: +strings.out.toFixed(3)
+      };
+    }
+  };
+  addEventListener('resize', size);
+  size();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
