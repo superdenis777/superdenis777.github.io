@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ziran</title>
+<meta name="description" content="After the poem Ziran. Beings speak, pair off, call each other in and drift away; every group turns through as many dimensions as it has members, minus one, and every being is itself a small group of smaller ones. Tap for sound.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Ziran">
+<meta property="og:description" content="After the poem Ziran. Beings speak, pair off, call each other in and drift away; every group turns through as many dimensions as it has members, minus one, and every being is itself a small group of smaller ones. Tap for sound.">
+<meta property="og:url" content="https://superdenis777.github.io/ziran/">
+<meta property="og:image" content="https://superdenis777.github.io/ziran/preview.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#040405">
+<style>
+  /* Layout: one endless dark field, no interface. Beings speak to each other. Every We is a regular simplex turning through as many dimensions as it has members, minus one; every being is itself a small We of smaller beings, three levels down, all visible at once. Single-theme dark. */
+  :root { color-scheme: dark; }
+  html, body { height: 100%; background: #040405; }
+  body { margin: 0; overflow: hidden; touch-action: none; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: pointer; }
+  #hint { position: fixed; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom, 0px) + 20px); text-align: center; font: italic 15px/1.2 Georgia, 'Times New Roman', serif; letter-spacing: 0.04em; color: #ece5d5; opacity: 0; pointer-events: none; animation: hint 7s ease-in-out 1.5s forwards; }
+  @keyframes hint { 0% { opacity: 0; } 20% { opacity: 0.6; } 75% { opacity: 0.6; } 100% { opacity: 0; } }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="An endless generative piece after the poem Ziran, with no controls; tap to turn sound on or off. In the dark one being appears, then a second; a bright bead of light travels from the first to the second and back, and they join as a pair. Others appear and drift alone. Within each group everyone is connected to everyone by thin lines, and beads of light pass between them as they speak, while a ring marks whoever is being talked about. Groups take in those they call to, lose members, and merge; each group is drawn as the shadow of a perfectly even shape turning in as many dimensions as it has members minus one, so larger groups turn through more dimensions. Every being is itself a small group of smaller beings, and each of those a group of tiny lights, all turning and speaking at their own scale. When one being speaks to another it sometimes gives away a part of itself, which travels along the light and joins the other. Those no one has called for a while grow dim but stay, and are the first to be called."></canvas>
+<div id="hint">tap for sound</div>
+
+<script>
+(() => {
+  'use strict';
+  const cv = document.getElementById('c');
+  const ctx = cv.getContext('2d');
+  const TAU = Math.PI * 2, DH = 6;
+  const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const ease = x => { x = clamp(x); return x * x * (3 - 2 * x); };
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const rint = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+  const gauss = () => (Math.random() + Math.random() + Math.random() + Math.random() - 2) * 1.732;
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+  function hsl(h, s, l) {
+    h = (((h % 360) + 360) % 360) / 360;
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
+    const f = t => { t = (t + 1) % 1; return t < 1 / 6 ? p + (q - p) * 6 * t : t < 1 / 2 ? q : t < 2 / 3 ? p + (q - p) * (2 / 3 - t) * 6 : p; };
+    return [f(h + 1 / 3), f(h), f(h - 1 / 3)].map(v => Math.round(v * 255));
+  }
+  const css = c => c[0] + ',' + c[1] + ',' + c[2];
+
+  // ---------- turning through the hidden dimensions ----------
+  function rotate(R, a, b, th) {
+    const c = Math.cos(th), s = Math.sin(th);
+    for (let r = 0; r < DH; r++) { const x = R[r][a], y = R[r][b]; R[r][a] = c * x - s * y; R[r][b] = s * x + c * y; }
+  }
+  function orthonormalize(R) {
+    for (let i = 0; i < DH; i++) {
+      for (let j = 0; j < i; j++) { let d = 0; for (let k = 0; k < DH; k++) d += R[i][k] * R[j][k]; for (let k = 0; k < DH; k++) R[i][k] -= d * R[j][k]; }
+      let n = 0; for (let k = 0; k < DH; k++) n += R[i][k] * R[i][k];
+      n = Math.sqrt(n) || 1; for (let k = 0; k < DH; k++) R[i][k] /= n;
+    }
+  }
+  function turner(speed) {
+    const R = [];
+    for (let i = 0; i < DH; i++) { const r = new Float64Array(DH); r[i] = 1; R.push(r); }
+    for (let a = 0; a < DH; a++) for (let b = a + 1; b < DH; b++) rotate(R, a, b, rnd(0, TAU));
+    const planes = [];
+    for (let a = 0; a < DH; a++) for (let b = a + 1; b < DH; b++)
+      if (Math.random() < 0.5) planes.push({ a, b, w: rnd(0.4, 1) * speed * (Math.random() < 0.5 ? -1 : 1) });
+    return { R, planes, speed, n: 0 };
+  }
+  // the speeds wander, so no shape ever turns the same way twice
+  function turn(t, dt, mul) {
+    for (const p of t.planes) {
+      p.w = clamp(p.w + gauss() * t.speed * 0.06 * Math.sqrt(dt), -t.speed * 1.3, t.speed * 1.3);
+      rotate(t.R, p.a, p.b, p.w * dt * mul);
+    }
+    if (++t.n % 120 === 0) orthonormalize(t.R);
+  }
+  const P = new Float64Array(3);
+  function proj(t, v) {
+    const R = t.R; let x = 0, y = 0, z = 0;
+    for (let d = 0; d < DH; d++) { const q = v[d]; x += R[0][d] * q; y += R[1][d] * q; z += R[2][d] * q; }
+    P[0] = x; P[1] = y; P[2] = z;
+  }
+
+  // ---------- a We ----------
+  // the only way for m members to be equally near one another is the corners of a regular simplex,
+  // which needs m - 1 dimensions: the bigger the We, the more dimensions it turns through
+  class We {
+    constructor(speed) { this.m = []; this.tn = turner(speed); }
+    get size() { return this.m.length; }
+    freeSlot() { for (let i = 0; i < DH; i++) if (!this.m.some(x => x.slot === i)) return i; return -1; }
+    add(x, snap) {
+      x.slot = this.freeSlot(); this.m.push(x);
+      if (!x.s) x.s = new Float32Array(DH);
+      if (!x.tg) x.tg = new Float32Array(DH);
+      this.retarget();
+      if (snap) x.s.set(x.tg);
+    }
+    remove(x) { const i = this.m.indexOf(x); if (i >= 0) this.m.splice(i, 1); this.retarget(); }
+    retarget() {
+      const n = this.m.length;
+      for (const x of this.m) {
+        x.tg.fill(0);
+        if (n < 2) continue;
+        const k = 1 / Math.sqrt(1 - 1 / n);
+        for (const y of this.m) x.tg[y.slot] -= k / n;
+        x.tg[x.slot] += k;
+      }
+    }
+    step(dt, mul) {
+      turn(this.tn, dt, mul);
+      const k = clamp(dt * 1.1);
+      for (const x of this.m) for (let d = 0; d < DH; d++) x.s[d] += (x.tg[d] - x.s[d]) * k;
+    }
+  }
+
+  // ---------- world ----------
+  let W = 0, H = 0, U = 1, DPR = 1, CR = 1.2;
+  let T = 0, gen = 0, POP = 10, h0 = rnd(0, 360), weId = 0;
+  let beings = [], wes = [], beads = [], rings = [], transit = [];
+  let nextReach = 1e9, nextPair = 1e9, nextLeave = 1e9, nextAcross = 1e9;
+  const talks = new Map();
+  const tally = { said: 0, pairs: 0, joins: 0, leaves: 0, merges: 0, gifts: 0, reached: 0 };
+  const rWe = m => U * (0.06 + 0.028 * m);
+  const rBeing = n => U * (0.02 + 0.0075 * n);
+  const rSub = k => U * (0.0055 + 0.0025 * k);
+  const PENT = [0, 2, 4, 7, 9];
+  const noteFor = i => Math.pow(2, (PENT[i % 5] + 12 * (Math.floor(i / 5) % 2)) / 12);
+  const isIt = b => !b.we && b.alpha > 0.9 && T - b.last > 16;
+
+  function makeSub(hue) {
+    const col = hsl(hue + gauss() * 7, rnd(0.5, 0.72), 0.66);
+    const s = { col, cstr: 'rgb(' + css(col) + ')', inner: new We(rnd(0.5, 0.9)), x: 0, y: 0, z: 0, rad: 0, flash: 0, next: rnd(0, 0.6) };
+    const k = rint(2, 4);
+    for (let i = 0; i < k; i++) s.inner.add({ x: 0, y: 0, z: 0, flash: 0 }, true);
+    s.rad = rSub(k);
+    return s;
+  }
+  function spawnBeing(x, y) {
+    const i = beings.length, hue = h0 + i * 137.508;
+    const b = {
+      id: i, col: hsl(hue, 0.62, 0.7), note: noteFor(i),
+      lx: x, ly: y, vx: 0, vy: 0, x, y, z: 0, we: null, attach: 0, alpha: 0,
+      last: T, busy: 0, flash: 0, ring: 0, cI: 0, cY: 0, cR: 0,
+      inner: new We(rnd(0.18, 0.32)), rad: 0, next: rnd(0.3, 1.2)
+    };
+    const n = rint(3, 5);
+    for (let k = 0; k < n; k++) b.inner.add(makeSub(hue), true);
+    b.rad = rBeing(n);
+    beings.push(b);
+    return b;
+  }
+  function spot() {
+    let best = [W / 2, H / 2], bs = -1e9;
+    for (let k = 0; k < 40; k++) {
+      const x = rnd(0.1, 0.9) * W, y = rnd(0.1, 0.9) * H;
+      let d = 1e9;
+      for (const b of beings) d = Math.min(d, Math.hypot(b.x - x, b.y - y));
+      for (const w of wes) d = Math.min(d, Math.hypot(w.cx - x, w.cy - y) - w.rad);
+      if (d > bs) { bs = d; best = [x, y]; }
+    }
+    return best;
+  }
+
+  // ---------- speaking ----------
+  function say(a, b, kind, extra = {}) {
+    const dur = clamp(Math.hypot(b.x - a.x, b.y - a.y) / (U * 0.32), 0.7, 2.2);
+    const bd = { a, b, kind, t: 0, dur, col: a.col, level: 0, ...extra };
+    if (bd.carry) { a.inner.remove(bd.carry); transit.push({ s: bd.carry, bd }); }
+    beads.push(bd);
+    a.flash = 1; a.cI++; a.busy = b.busy = T + dur + 0.4;
+    tally.said++;
+    sound.speak(a);
+    return bd;
+  }
+
+  function arrive(bd) {
+    const { a, b, kind } = bd;
+    b.flash = 1; b.last = T; b.cY++;
+    sound.hear(b);
+    if (bd.carry) {
+      // a part of the one who spoke now belongs to the one spoken to
+      const s = bd.carry;
+      transit = transit.filter(q => q.s !== s);
+      s.s = new Float32Array(DH);
+      b.inner.add(s, false);
+      tally.gifts++; sound.gift(b);
+    }
+    if (kind === 'reach') {
+      if (!b.we && a.we && Math.random() < 0.65) say(b, a, 'accept', { target: a.we });
+    } else if (kind === 'accept') {
+      const w = bd.target;
+      if (!a.we && wes.includes(w) && b.we === w && w.size < DH) join(a, w);
+    } else if (kind === 'pair') {
+      if (!a.we && !b.we && (bd.sure || Math.random() < 0.85)) say(b, a, 'pairback');
+    } else if (kind === 'pairback') {
+      if (!a.we && !b.we) makeWe([b, a]);
+    } else if (kind === 'across') {
+      const A = a.we, B = b.we;
+      if (A && B && A !== B) {
+        const key = Math.min(A.id, B.id) + '-' + Math.max(A.id, B.id);
+        const n = (talks.get(key) || 0) + 1; talks.set(key, n);
+        if (n >= 2 && A.size + B.size <= DH) { talks.delete(key); A.size <= B.size ? merge(A, B) : merge(B, A); }
+      }
+    }
+  }
+
+  function enter(b, w) {
+    b.lx = b.x; b.ly = b.y; b.we = w; b.attach = 0;
+    b.s = new Float32Array(DH); b.tg = new Float32Array(DH);
+    w.add(b, true);
+  }
+  function makeWe(list) {
+    const w = new We(rnd(0.05, 0.11));
+    w.id = ++weId;
+    w.cx = list.reduce((s, b) => s + b.x, 0) / list.length;
+    w.cy = list.reduce((s, b) => s + b.y, 0) / list.length;
+    w.vx = 0; w.vy = 0; w.rad = rWe(list.length) * 0.7; w.next = T + rnd(0.6, 1.4);
+    for (const b of list) enter(b, w);
+    wes.push(w); tally.pairs++;
+    rings.push({ x: w.cx, y: w.cy, r0: U * 0.02, r1: rWe(2) * 1.3, t: 0, dur: 2.5, col: list[0].col });
+    sound.chord(w);
+  }
+  function join(b, w) {
+    enter(b, w);
+    tally.joins++;
+    rings.push({ x: w.cx, y: w.cy, r0: w.rad * 0.5, r1: rWe(w.size) * 1.25, t: 0, dur: 2.5, col: b.col });
+    sound.chord(w);
+  }
+  function merge(A, B) {
+    for (const b of A.m.slice()) { A.remove(b); enter(b, B); }
+    wes.splice(wes.indexOf(A), 1);
+    tally.merges++;
+    rings.push({ x: B.cx, y: B.cy, r0: B.rad * 0.4, r1: rWe(B.size) * 1.4, t: 0, dur: 3, col: [236, 229, 213] });
+    sound.chord(B);
+  }
+  function release(b, w, push) {
+    w.remove(b); b.we = null; b.attach = 0; b.lx = b.x; b.ly = b.y;
+    const dx = b.x - w.cx, dy = b.y - w.cy, d = Math.hypot(dx, dy) || 1;
+    b.vx = (dx / d) * U * push; b.vy = (dy / d) * U * push;
+  }
+  function leave(b) {
+    const w = b.we; if (!w) return;
+    release(b, w, 0.035);
+    tally.leaves++; sound.leave(b);
+    if (w.size === 1) release(w.m[0], w, 0.02);
+    if (w.size === 0) wes.splice(wes.indexOf(w), 1);
+  }
+
+  // inside a We, everyone takes every part in turn: the one speaking, the one spoken to, the one spoken of
+  function converse(w) {
+    const M = w.m; if (M.length < 2) return;
+    const order = (arr, key) => arr.map(x => [x[key] + Math.random() * 0.9, x]).sort((p, q) => p[0] - q[0]).map(p => p[1]);
+    const a = order(M, 'cI')[0];
+    const b = order(M, 'cY').find(x => x !== a);
+    let r = null;
+    if (M.length >= 3) r = order(M, 'cR').find(x => x !== a && x !== b);
+    else {
+      // a pair talks about someone outside: We call them They
+      const out = beings.filter(x => !x.we && x.alpha > 0.5);
+      if (out.length) r = order(out, 'cR')[0];
+    }
+    if (r) { r.ring = 1; r.cR++; }
+    const carry = Math.random() < 0.16 && a.inner.size >= 3 && b.inner.size <= 5 ? pick(a.inner.m) : null;
+    say(a, b, 'in', carry ? { carry } : {});
+  }
+  function reach() {
+    // the one left alone longest is the first to be called
+    const loose = beings.filter(b => !b.we && b.alpha > 0.8 && T > b.busy);
+    const open = wes.filter(w => w.size < DH);
+    if (!loose.length || !open.length) return;
+    loose.sort((p, q) => p.last - q.last);
+    const b = Math.random() < 0.6 ? loose[0] : pick(loose);
+    open.sort((p, q) => Math.hypot(p.cx - b.x, p.cy - b.y) - Math.hypot(q.cx - b.x, q.cy - b.y));
+    const w = Math.random() < 0.7 ? open[0] : pick(open);
+    const a = w.m.slice().sort((p, q) => p.cI - q.cI)[0];
+    say(a, b, 'reach', Math.random() < 0.2 && a.inner.size >= 3 && b.inner.size <= 5 ? { carry: pick(a.inner.m) } : {});
+    tally.reached++;
+  }
+  function pairUp() {
+    if (wes.length >= Math.floor(POP / 2.5)) return;
+    const loose = beings.filter(b => !b.we && b.alpha > 0.8 && T > b.busy);
+    if (loose.length < 2) return;
+    const a = pick(loose);
+    const b = loose.filter(x => x !== a).sort((p, q) => Math.hypot(p.x - a.x, p.y - a.y) - Math.hypot(q.x - a.x, q.y - a.y))[0];
+    say(a, b, 'pair');
+  }
+  function leaveSome() {
+    const loose = beings.filter(b => !b.we).length;
+    if (loose > POP * 0.5) return;
+    const full = wes.filter(w => w.size === DH);
+    let w = null;
+    if (full.length && Math.random() < 0.6) w = pick(full);
+    else {
+      const c = wes.filter(x => x.size >= 3 || Math.random() < 0.25);
+      if (c.length) w = c.map(x => [Math.random() * (x.size - 1.5), x]).sort((p, q) => q[0] - p[0])[0][1];
+    }
+    if (w && w.m.length) leave(pick(w.m.filter(b => b.attach > 0.9).length ? w.m.filter(b => b.attach > 0.9) : w.m));
+  }
+  function across() {
+    if (wes.length < 2) return;
+    let A = null, B = null, best = 1e9;
+    for (const p of wes) for (const q of wes) if (p !== q) { const d = Math.hypot(p.cx - q.cx, p.cy - q.cy) * rnd(0.7, 1.3); if (d < best) { best = d; A = p; B = q; } }
+    const a = A.m.slice().sort((p, q) => p.cI - q.cI)[0];
+    say(a, pick(B.m), 'across', Math.random() < 0.2 && a.inner.size >= 3 ? { carry: pick(a.inner.m) } : {});
+  }
+
+  // ---------- the poem, in order: I, then You, then We, then They ----------
+  function genesis() {
+    if (gen === 0 && T > 2.5) { spawnBeing(W / 2 - U * 0.08, H / 2 - U * 0.01); gen = 1; }
+    else if (gen === 1 && T > 6.5) { spawnBeing(W / 2 + U * 0.09, H / 2 + U * 0.02); gen = 2; }
+    else if (gen === 2 && T > 9) {
+      say(beings[0], beings[1], 'pair', { sure: true }); gen = 3;
+      nextReach = 18; nextPair = 24; nextLeave = 42; nextAcross = 32;
+    } else if (gen === 3 && beings.length < POP && T > 13 + (beings.length - 2) * 2.2) {
+      const [x, y] = spot(); spawnBeing(x, y);
+    }
+  }
+
+  // ---------- one step ----------
+  function placeSub(s, x, y, mood, dt) {
+    s.x = x; s.y = y;
+    s.inner.step(dt, mood * 1.2);
+    s.rad = lerp(s.rad, rSub(s.inner.size), clamp(dt));
+    s.flash = Math.max(0, s.flash - dt * 1.6);
+    for (const d of s.inner.m) {
+      proj(s.inner.tn, d.s);
+      d.x = x + P[0] * s.rad; d.y = y + P[1] * s.rad; d.z = P[2];
+      d.flash = Math.max(0, d.flash - dt * 2.5);
+    }
+    s.next -= dt * mood;
+    if (s.next <= 0) { s.next = rnd(0.25, 0.9); pick(s.inner.m).flash = 1; }
+  }
+
+  function update(dt) {
+    T += dt;
+    genesis();
+    if (T > nextReach) { nextReach = T + rnd(6, 12); reach(); }
+    if (T > nextPair) { nextPair = T + rnd(9, 18); pairUp(); }
+    if (T > nextLeave) { nextLeave = T + rnd(7, 15); leaveSome(); }
+    if (T > nextAcross) { nextAcross = T + rnd(7, 15); across(); }
+    for (const w of wes) if (T > w.next) { w.next = T + rnd(1.3, 2.8); converse(w); }
+
+    const damp = Math.exp(-1.2 * dt), sq = Math.sqrt(dt);
+    for (const w of wes) {
+      let ax = (W / 2 - w.cx) * 0.015, ay = (H / 2 - w.cy) * 0.015;
+      for (const o of wes) if (o !== w) {
+        const dx = w.cx - o.cx, dy = w.cy - o.cy, d = Math.hypot(dx, dy) || 1, mn = w.rad + o.rad + U * 0.14;
+        if (d < mn) { ax += (dx / d) * (mn - d) * 1.2; ay += (dy / d) * (mn - d) * 1.2; }
+        // a gentle, long reach: the groups share the whole dark between them
+        const f = (U * U * 0.0032) / d; ax += (dx / d) * f; ay += (dy / d) * f;
+      }
+      const mg = w.rad + U * 0.08;
+      if (w.cx < mg) ax += (mg - w.cx) * 2; if (w.cx > W - mg) ax -= (w.cx - W + mg) * 2;
+      if (w.cy < mg) ay += (mg - w.cy) * 2; if (w.cy > H - mg) ay -= (w.cy - H + mg) * 2;
+      w.vx = w.vx * damp + ax * dt + gauss() * U * 0.006 * sq;
+      w.vy = w.vy * damp + ay * dt + gauss() * U * 0.006 * sq;
+      const sp = Math.hypot(w.vx, w.vy), vm = U * 0.03;
+      if (sp > vm) { w.vx *= vm / sp; w.vy *= vm / sp; }
+      w.cx += w.vx * dt; w.cy += w.vy * dt;
+      w.step(dt, 1);
+      w.rad = lerp(w.rad, rWe(w.size), clamp(dt * 0.8));
+    }
+    for (const b of beings) {
+      if (b.we) continue;
+      let ax = (W / 2 - b.lx) * 0.012, ay = (H / 2 - b.ly) * 0.012;
+      for (const w of wes) {
+        const dx = b.lx - w.cx, dy = b.ly - w.cy, d = Math.hypot(dx, dy) || 1, mn = w.rad + U * 0.1;
+        if (d < mn) { ax += (dx / d) * (mn - d) * 1.5; ay += (dy / d) * (mn - d) * 1.5; }
+      }
+      for (const o of beings) if (o !== b && !o.we) {
+        const dx = b.lx - o.lx, dy = b.ly - o.ly, d = Math.hypot(dx, dy) || 1, mn = U * 0.12;
+        if (d < mn) { ax += (dx / d) * (mn - d); ay += (dy / d) * (mn - d); }
+      }
+      const mg = U * 0.09;
+      if (b.lx < mg) ax += (mg - b.lx) * 2; if (b.lx > W - mg) ax -= (b.lx - W + mg) * 2;
+      if (b.ly < mg) ay += (mg - b.ly) * 2; if (b.ly > H - mg) ay -= (b.ly - H + mg) * 2;
+      b.vx = b.vx * damp + ax * dt + gauss() * U * 0.008 * sq;
+      b.vy = b.vy * damp + ay * dt + gauss() * U * 0.008 * sq;
+      const sp = Math.hypot(b.vx, b.vy), vm = U * (isIt(b) ? 0.014 : 0.03);
+      if (sp > vm) { b.vx *= vm / sp; b.vy *= vm / sp; }
+      b.lx += b.vx * dt; b.ly += b.vy * dt;
+    }
+
+    for (const b of beings) {
+      b.alpha = Math.min(1, b.alpha + dt / 2.5);
+      b.flash = Math.max(0, b.flash - dt * 0.9);
+      b.ring = Math.max(0, b.ring - dt * 0.6);
+      if (b.we) {
+        const w = b.we;
+        proj(w.tn, b.s);
+        b.attach = Math.min(1, b.attach + dt / 2.5);
+        const e = ease(b.attach);
+        b.x = lerp(b.lx, w.cx + P[0] * w.rad, e); b.y = lerp(b.ly, w.cy + P[1] * w.rad, e); b.z = P[2] * e;
+      } else { b.x = b.lx; b.y = b.ly; b.z *= 1 - clamp(dt); }
+      const mood = isIt(b) ? 0.35 : 1 + 1.6 * b.flash;
+      b.inner.step(dt, mood);
+      b.rad = lerp(b.rad, rBeing(b.inner.size), clamp(dt));
+      for (const s of b.inner.m) { proj(b.inner.tn, s.s); placeSub(s, b.x + P[0] * b.rad, b.y + P[1] * b.rad, mood, dt); s.z = P[2]; }
+      // inside, the same conversation, smaller and quicker
+      b.next -= dt * mood;
+      if (b.next <= 0 && b.inner.size >= 2) {
+        b.next = rnd(0.5, 1.4);
+        const i = Math.floor(Math.random() * b.inner.size), j = (i + 1 + Math.floor(Math.random() * (b.inner.size - 1))) % b.inner.size;
+        const s1 = b.inner.m[i], s2 = b.inner.m[j];
+        beads.push({ a: s1, b: s2, level: 1, t: 0, dur: rnd(0.35, 0.6), col: s1.col });
+      }
+    }
+    for (const q of transit) {
+      const bd = q.bd, e = ease(clamp(bd.t / bd.dur));
+      placeSub(q.s, lerp(bd.a.x, bd.b.x, e), lerp(bd.a.y, bd.b.y, e), 1.5, dt);
+    }
+
+    for (const bd of beads) {
+      bd.t += dt;
+      if (bd.t >= bd.dur && !bd.done) {
+        bd.done = true;
+        if (bd.level === 0) arrive(bd); else bd.b.flash = 1;
+      }
+    }
+    beads = beads.filter(bd => !bd.done);
+    for (const r of rings) r.t += dt;
+    rings = rings.filter(r => r.t < r.dur);
+  }
+
+  // ---------- drawing ----------
+  function glow(x, y, r, c, a) {
+    if (a <= 0.003 || r <= 0) return;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, 'rgba(' + c + ',' + a + ')');
+    g.addColorStop(0.35, 'rgba(' + c + ',' + a * 0.3 + ')');
+    g.addColorStop(1, 'rgba(' + c + ',0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+  }
+  function edges(M, style) {
+    if (M.length < 2) return;
+    ctx.strokeStyle = style; ctx.beginPath();
+    for (let i = 0; i < M.length; i++) for (let j = i + 1; j < M.length; j++) { ctx.moveTo(M[i].x, M[i].y); ctx.lineTo(M[j].x, M[j].y); }
+    ctx.stroke();
+  }
+  function drawSub(s, br) {
+    edges(s.inner.m, 'rgba(' + css(s.col) + ',' + ((0.2 + 0.3 * s.flash) * br).toFixed(3) + ')');
+    ctx.fillStyle = s.cstr;
+    for (const d of s.inner.m) {
+      ctx.globalAlpha = clamp((0.5 + 0.25 * d.z + 0.5 * Math.max(d.flash, s.flash)) * br);
+      ctx.beginPath(); ctx.arc(d.x, d.y, CR * (1 + 0.25 * d.z), 0, TAU); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  const bright = b => b.alpha * (isIt(b) ? 0.38 : 1) * (0.82 + 0.18 * clamp(b.z, -1, 1));
+
+  function draw() {
+    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+    ctx.fillStyle = '#040405'; ctx.fillRect(0, 0, W, H);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineWidth = 1;
+    // each of us, to each of us, a You
+    for (const w of wes) {
+      const att = Math.min(...w.m.map(x => x.attach));
+      edges(w.m, 'rgba(236,229,213,' + (0.07 + 0.11 * ease(att)).toFixed(3) + ')');
+    }
+    for (const b of beings) {
+      const br = bright(b); if (br < 0.01) continue;
+      edges(b.inner.m, 'rgba(' + css(b.col) + ',' + (0.17 * br).toFixed(3) + ')');
+      for (const s of b.inner.m) drawSub(s, br);
+      if (b.flash > 0.02) glow(b.x, b.y, b.rad * 2.4, css(b.col), 0.24 * b.flash * br);
+      if (b.ring > 0.02) {
+        ctx.strokeStyle = 'rgba(' + css(b.col) + ',' + (0.45 * b.ring * br).toFixed(3) + ')';
+        ctx.beginPath(); ctx.arc(b.x, b.y, b.rad * (1.5 + 0.7 * (1 - b.ring)), 0, TAU); ctx.stroke();
+      }
+    }
+    for (const q of transit) drawSub(q.s, 1);
+    for (const bd of beads) {
+      const e = ease(clamp(bd.t / bd.dur)), e0 = ease(clamp((bd.t - bd.dur * 0.2) / bd.dur));
+      const x = lerp(bd.a.x, bd.b.x, e), y = lerp(bd.a.y, bd.b.y, e);
+      const big = bd.level === 0, c = css(bd.col);
+      if (big) {
+        ctx.strokeStyle = 'rgba(' + c + ',0.1)';
+        ctx.beginPath(); ctx.moveTo(bd.a.x, bd.a.y); ctx.lineTo(x, y); ctx.stroke();
+      }
+      ctx.strokeStyle = 'rgba(' + c + ',' + (big ? 0.6 : 0.45) + ')';
+      ctx.beginPath(); ctx.moveTo(lerp(bd.a.x, bd.b.x, e0), lerp(bd.a.y, bd.b.y, e0)); ctx.lineTo(x, y); ctx.stroke();
+      if (big) glow(x, y, CR * 7, c, 0.35);
+      ctx.fillStyle = 'rgba(' + css(bd.col.map(v => Math.round(lerp(v, 255, 0.5)))) + ',0.95)';
+      ctx.beginPath(); ctx.arc(x, y, CR * (big ? 1.7 : 1.05), 0, TAU); ctx.fill();
+    }
+    for (const r of rings) {
+      const q = r.t / r.dur;
+      ctx.strokeStyle = 'rgba(' + css(r.col) + ',' + (0.4 * (1 - q)).toFixed(3) + ')';
+      ctx.beginPath(); ctx.arc(r.x, r.y, lerp(r.r0, r.r1, ease(Math.sqrt(q))), 0, TAU); ctx.stroke();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  // ---------- sound: off until tapped; each being has its own note ----------
+  const sound = (() => {
+    let a = null, on = false, master, padF;
+    const root = 55 * Math.pow(2, rint(-2, 4) / 12);
+    function init() {
+      const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return false;
+      a = new AC();
+      const comp = a.createDynamicsCompressor(); comp.threshold.value = -16; comp.ratio.value = 4; comp.connect(a.destination);
+      master = a.createGain(); master.gain.value = 0; master.connect(comp);
+      padF = a.createBiquadFilter(); padF.type = 'lowpass'; padF.frequency.value = 260; padF.connect(master);
+      [[1, 0.11, 'sine'], [1.5, 0.055, 'triangle'], [2, 0.04, 'triangle']].forEach(([r, g0, type]) => {
+        [-4, 4].forEach(det => {
+          const o = a.createOscillator(), g = a.createGain();
+          o.type = type; o.frequency.value = root * r; o.detune.value = det; g.gain.value = g0;
+          o.connect(g); g.connect(padF); o.start();
+        });
+      });
+      return true;
+    }
+    const panOf = x => clamp((x / W - 0.5) * 1.3, -0.7, 0.7);
+    function tone(f, g0, len, x, delay = 0) {
+      if (!on) return;
+      const t = a.currentTime + delay, o = a.createOscillator(), g = a.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(g0, t + 0.03);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+      o.connect(g);
+      if (a.createStereoPanner) { const p = a.createStereoPanner(); p.pan.value = panOf(x); g.connect(p); p.connect(master); }
+      else g.connect(master);
+      o.start(t); o.stop(t + len + 0.1);
+    }
+    return {
+      on: () => on,
+      toggle: async () => {
+        if (!a && !init()) return false;
+        on = !on;
+        if (on) { try { await a.resume(); } catch (e) {} master.gain.setTargetAtTime(0.85, a.currentTime, 0.8); }
+        else master.gain.setTargetAtTime(0, a.currentTime, 0.25);
+        return on;
+      },
+      speak: b => tone(root * 4 * b.note, 0.07, 1.3, b.x),
+      hear: b => tone(root * 4 * b.note, 0.045, 1.1, b.x),
+      chord: w => w.m.forEach((b, i) => tone(root * 4 * b.note, 0.05, 3, b.x, i * 0.09)),
+      leave: b => tone(root * 2 * b.note, 0.065, 2.2, b.x),
+      gift: b => tone(root * 8 * b.note, 0.025, 0.8, b.x),
+      mood: c => { if (on) padF.frequency.setTargetAtTime(200 + 800 * c, a.currentTime, 2); }
+    };
+  })();
+  cv.addEventListener('pointerdown', () => { sound.toggle(); });
+
+  // ---------- size ----------
+  function size() {
+    const oW = W, oH = H;
+    DPR = Math.min(devicePixelRatio || 1, 2);
+    W = innerWidth; H = innerHeight; U = Math.min(W, H);
+    cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    CR = clamp(U * 0.0019, 1, 1.8);
+    if (oW) {
+      const sx = W / oW, sy = H / oH;
+      for (const b of beings) { b.lx *= sx; b.ly *= sy; b.x *= sx; b.y *= sy; }
+      for (const w of wes) { w.cx *= sx; w.cy *= sy; }
+      for (const r of rings) { r.x *= sx; r.y *= sy; }
+    } else POP = Math.round(clamp(6 * Math.sqrt((W * H) / (390 * 844)), 7, 12));
+  }
+
+  // ---------- run ----------
+  let last = performance.now(), moodAt = 0;
+  function loop(now) {
+    const dt = clamp((now - last) / 1000, 0, 0.05); last = now;
+    update(dt);
+    draw();
+    if (T - moodAt > 0.5) { moodAt = T; sound.mood(beings.length ? beings.filter(b => b.we).length / beings.length : 0); }
+    requestAnimationFrame(loop);
+  }
+
+  // for testing from outside; nothing on screen
+  window.__ziran = {
+    ff(sec, h = 1 / 30) { for (let t = 0; t < sec; t += h) update(h); draw(); },
+    stats() {
+      const roles = beings.map(b => [b.cI, b.cY, b.cR]);
+      return {
+        T: +T.toFixed(1), beings: beings.length, loose: beings.filter(b => !b.we).length, its: beings.filter(isIt).length,
+        wes: wes.map(w => w.size), parts: beings.map(b => b.inner.size), transit: transit.length, beads: beads.length,
+        tally: { ...tally }, roles
+      };
+    }
+  };
+
+  addEventListener('resize', size);
+  size();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
