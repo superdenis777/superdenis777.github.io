@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Semiotics Engine</title>
+<meta name="description" content="Small beings look at drifting things together and invent words for them. Words that work spread, the rest die, villages drift into dialects, and a language appears from nothing. Tap for sound: every word is a melody.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Semiotics Engine">
+<meta property="og:description" content="Small beings look at drifting things together and invent words for them. Words that work spread, the rest die, villages drift into dialects, and a language appears from nothing. Tap for sound: every word is a melody.">
+<meta property="og:url" content="https://superdenis777.github.io/semiotics-engine/">
+<meta property="og:image" content="https://superdenis777.github.io/semiotics-engine/preview.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#040405">
+<style>
+  /* Layout: one endless dark field, no interface. Lantern beings look at drifting things together and name them with invented words; words that work spread and the rest die; villages drift into dialects; new things arrive and get named. Single-theme dark by choice. */
+  :root { color-scheme: dark; --void: #040405; }
+  html, body { height: 100%; background: var(--void); }
+  body { margin: 0; overflow: hidden; touch-action: none; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: pointer; }
+  #hint { position: fixed; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom, 0px) + 20px); text-align: center; font: italic 15px/1.2 Georgia, 'Times New Roman', serif; letter-spacing: 0.04em; color: #ece5d5; opacity: 0; pointer-events: none; animation: hint 7s ease-in-out 1.5s forwards; }
+  @keyframes hint { 0% { opacity: 0; } 20% { opacity: 0.6; } 75% { opacity: 0.6; } 100% { opacity: 0; } }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="An endless generative piece with no controls; tap to turn sound on or off. Simple line drawings of things drift through the dark: a moon, a snake, a drop of water, a flame, a star, a fish and others. Small lantern-bodied beings with eyes live in two or three villages. When two beings look at the same thing together, one says a word for it, made-up syllables shown above its head, and a bead of light travels from the speaker through the thing to the listener. If the listener already uses that word they both brighten and it repeats the word; if not, it learns it and asks it back with a question mark. Under each thing the words in use for it are written, the most shared one brightest. At first every being has its own word for everything; slowly a shared language appears, villages that rarely meet keep different words, travellers carry words between them, words change as they are misheard, and new things arrive and are named. With sound on, every word is a short melody."></canvas>
+<div id="hint">tap for sound</div>
+
+<script>
+(() => {
+  'use strict';
+  const cv = document.getElementById('c');
+  const ctx = cv.getContext('2d');
+  const TAU = Math.PI * 2;
+  const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const ease = x => { x = clamp(x); return x * x * (3 - 2 * x); };
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const gauss = () => (Math.random() + Math.random() + Math.random() + Math.random() - 2) * 1.732;
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+  const dist = (p, q) => Math.hypot(p.x - q.x, p.y - q.y);
+  function hsl(h, s, l) {
+    h = (((h % 360) + 360) % 360) / 360;
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
+    const f = t => { t = (t + 1) % 1; return t < 1 / 6 ? p + (q - p) * 6 * t : t < 1 / 2 ? q : t < 2 / 3 ? p + (q - p) * (2 / 3 - t) * 6 : p; };
+    return [f(h + 1 / 3), f(h), f(h - 1 / 3)].map(v => Math.round(v * 255));
+  }
+  const css = c => c[0] + ',' + c[1] + ',' + c[2];
+  const mix = (a, b, t) => [0, 1, 2].map(k => Math.round(lerp(a[k], b[k], t)));
+  const BONE = [236, 229, 213];
+
+  // ---------- the sounds a word can be made of ----------
+  const CONS = ['k', 't', 'm', 'n', 'l', 's', 'r', 'p', 'h', 'y', 'w'];
+  const VOW = ['a', 'e', 'i', 'o', 'u'];
+  const syl = () => pick(CONS) + pick(VOW) + (Math.random() < 0.12 ? 'n' : '');
+  function coin() { const n = Math.random() < 0.15 ? 1 : Math.random() < 0.82 ? 2 : 3; let w = ''; for (let i = 0; i < n; i++) w += syl(); return w; }
+  // a mishearing: one sound slides to its neighbour
+  const VSH = { a: 'e', e: 'i', i: 'e', o: 'u', u: 'o' };
+  const CSH = { k: 't', t: 'k', m: 'n', n: 'm', l: 'r', r: 'l', s: 'h', h: 's', p: 'm', y: 'w', w: 'y' };
+  function mishear(w) {
+    const i = Math.floor(Math.random() * w.length), ch = w[i], to = VSH[ch] || CSH[ch];
+    return to ? w.slice(0, i) + to + w.slice(i + 1) : w;
+  }
+  const SYL_RE = /[kmtnlsrphyw]?[aeiou](?:n(?![aeiou]))?/g;
+
+  // ---------- world ----------
+  let W = 0, H = 0, U = 1, DPR = 1, FS = 13, S = 1;
+  let T = 0, thingId = 0, gen = 0;
+  let things = [], beings = [], villages = [], beads = [];
+  let nextThing = 1e9, nextLeave = 1e9, nextMigrate = 1e9;
+  const recent = [];
+  const tally = { talks: 0, agreed: 0, learned: 0, coined: 0, borrowed: 0, category: 0, misheard: 0, arrived: 0, left: 0, moved: 0 };
+  const KINDS = ['moon', 'snake', 'drop', 'flame', 'star', 'fish', 'eye', 'door', 'tree', 'bird', 'stone', 'key'];
+
+  function spawnThing(kind, x, y) {
+    const t = { id: ++thingId, kind, x, y, vx: 0, vy: 0, rot: rnd(-0.25, 0.25), wr: rnd(0.05, 0.15) * (Math.random() < 0.5 ? -1 : 1),
+      alpha: 0, leaving: false, glow: 0, labels: [], stone: Array.from({ length: 7 }, () => rnd(0.7, 1)) };
+    things.push(t);
+    return t;
+  }
+  function freeSpot(minD) {
+    let best = [W / 2, H / 2], bs = -1;
+    for (let k = 0; k < 40; k++) {
+      const x = rnd(0.12, 0.88) * W, y = rnd(0.15, 0.85) * H;
+      let d = 1e9; for (const t of things) d = Math.min(d, Math.hypot(t.x - x, t.y - y));
+      if (d > bs) { bs = d; best = [x, y]; }
+      if (d > minD) break;
+    }
+    return best;
+  }
+  function makeVillages() {
+    const wide = W / H > 1.2, tall = H / W > 1.2;
+    const spots = wide ? [[0.22, 0.38], [0.5, 0.68], [0.78, 0.36]] : tall ? [[0.5, 0.27], [0.5, 0.73]] : [[0.3, 0.35], [0.7, 0.65]];
+    villages = spots.map(([x, y]) => ({ x: (x + gauss() * 0.03) * W, y: (y + gauss() * 0.03) * H }));
+    const h0 = rnd(0, 360);
+    villages.forEach((v, i) => { v.col = hsl(h0 + i * 125, 0.6, 0.68); v.oct = i; });
+  }
+  function spawnBeing(v) {
+    const vil = villages[v];
+    const b = {
+      v, x: vil.x + gauss() * U * 0.06, y: vil.y + gauss() * U * 0.06, vx: 0, vy: 0, alpha: 0,
+      col: mix(vil.col, hsl(rnd(0, 360), 0.5, 0.7), 0.25), lex: new Map(), kmem: new Map(),
+      next: rnd(1.5, 5), busy: 0, target: null, targetUntil: 0, flash: 0,
+      gx: 0, gy: 0.3, look: null, lookUntil: 0, blinkAt: -9, blinkNext: rnd(1, 5), mouth: 0, hop: 0,
+      ph: rnd(0, TAU), w1: rnd(0, TAU), w2: rnd(0, TAU), line: null, lineT: 0, lineDur: 0, lineKind: 'say', talkUntil: 0
+    };
+    beings.push(b);
+    return b;
+  }
+
+  // ---------- what a being knows: for each thing, its words and how sure it is of each ----------
+  function words(b, t) { let m = b.lex.get(t.id); if (!m) { m = new Map(); b.lex.set(t.id, m); } return m; }
+  function topWord(b, t) {
+    const m = b.lex.get(t.id); if (!m) return null;
+    let best = null, bs = 0; for (const [w, s] of m) if (s > bs) { bs = s; best = w; }
+    return best;
+  }
+  function reinforce(b, t, w) {
+    const m = words(b, t);
+    for (const [k, s] of m) { if (k === w) continue; const n = s - 0.2; if (n <= 0) m.delete(k); else m.set(k, n); }
+    m.set(w, Math.min(1, (m.get(w) || 0) + 0.2));
+  }
+
+  // two beings, one thing: the whole of semiosis
+  function talk(s) {
+    let h = null, hd = 1e9;
+    for (const o of beings) if (o !== s && T > o.busy && o.alpha > 0.8) { const d = dist(s, o); if (d < U * 0.2 && d < hd) { hd = d; h = o; } }
+    if (!h) { s.target = nearestThing(s); return; }
+    let topic = null, td = 1e9;
+    for (const t of things) {
+      if (t.alpha < 0.6 || t.leaving) continue;
+      const d1 = dist(s, t), d2 = dist(h, t);
+      if (d1 < U * 0.32 && d2 < U * 0.32 && d1 + d2 < td) { td = d1 + d2; topic = t; }
+    }
+    if (!topic) { s.target = nearestThing(s); return; }
+    s.target = null;
+    let w = topWord(s, topic);
+    if (!w) {
+      // no word yet: one for something of the same kind, the word for whatever is beside it, or a new one
+      const same = things.find(o => o !== topic && o.kind === topic.kind && topWord(s, o));
+      const kept = s.kmem.get(topic.kind);
+      if (same || kept) { w = same ? topWord(s, same) : kept; tally.category++; }
+      else {
+        let nb = null, nd = U * 0.28;
+        for (const o of things) if (o !== topic && !o.leaving) { const d = dist(o, topic); if (d < nd && topWord(s, o)) { nd = d; nb = o; } }
+        if (nb && Math.random() < 0.22) { w = topWord(s, nb); tally.borrowed++; } else { w = coin(); tally.coined++; }
+      }
+      words(s, topic).set(w, 0.5);
+    }
+    let heard = w;
+    if (Math.random() < 0.035) { heard = mishear(w); if (heard !== w) tally.misheard++; }
+    const ok = words(h, topic).has(heard);
+    tally.talks++;
+    s.busy = h.busy = T + 2.6;
+    s.look = topic; s.lookUntil = T + 1.3; h.look = topic; h.lookUntil = T + 1.1;
+    topic.glow = 1;
+    say(s, w, 'say');
+    beads.push({ s, h, t: topic, w, heard, ok, k: 0, dur: clamp((dist(s, topic) + dist(topic, h)) / (U * 0.45), 0.8, 1.8) });
+  }
+  function nearestThing(b) {
+    let best = null, bd = 1e9;
+    for (const t of things) if (!t.leaving && t.alpha > 0.5) {
+      const d = dist(b, t) * rnd(0.6, 1.4) * (topWord(b, t) ? 1 : 0.45);
+      if (d < bd && d < U * 0.6) { bd = d; best = t; }
+    }
+    if (best) b.targetUntil = T + 14;
+    return best;
+  }
+  function arrive(bd) {
+    const { s, h, t, w, heard, ok } = bd;
+    h.look = s; h.lookUntil = T + 1.5; s.look = h; s.lookUntil = T + 1.5;
+    if (ok) {
+      reinforce(s, t, w); reinforce(h, t, heard);
+      s.flash = h.flash = 1; tally.agreed++;
+      say(h, heard, 'echo');
+    } else {
+      const m = words(h, t); m.set(heard, Math.max(m.get(heard) || 0, 0.3));
+      const ms = words(s, t); ms.set(w, Math.max(0.05, (ms.get(w) || 0) - 0.1));
+      tally.learned++;
+      say(h, heard, 'ask');
+    }
+    recent.push(ok ? 1 : 0); if (recent.length > 60) recent.shift();
+  }
+  function say(b, w, kind) {
+    b.line = kind === 'ask' ? w + '?' : w; b.lineKind = kind; b.lineT = T;
+    b.lineDur = 1.9; b.talkUntil = T + 0.12 * Math.max(1, (w.match(SYL_RE) || []).length) + 0.1; b.hop = 1;
+    sound.word(b, w, kind);
+  }
+
+  // ---------- one step ----------
+  function genesis() {
+    if (gen === 0) { makeVillages(); gen = 1; }
+    const nT = W * H > 600000 ? 7 : 5;
+    if (gen === 1 && T > 0.8 && things.length < nT && T > 0.8 + things.length * 0.6) {
+      const used = new Set(things.map(t => t.kind)); const [x, y] = freeSpot(U * 0.25);
+      spawnThing(pick(KINDS.filter(k => !used.has(k))), x, y);
+    }
+    const nB = Math.round(clamp(6 * Math.sqrt((W * H) / (390 * 844)), 8, 15));
+    if (gen === 1 && T > 3 && beings.length < nB && T > 3 + beings.length * 0.35) spawnBeing(beings.length % villages.length);
+    if (gen === 1 && beings.length >= nB && things.length >= nT) { gen = 2; nextThing = T + rnd(60, 100); nextLeave = T + rnd(90, 140); nextMigrate = T + rnd(30, 50); }
+  }
+
+  function update(dt) {
+    T += dt;
+    genesis();
+    // the world keeps changing: things arrive and leave, beings move between villages
+    if (T > nextThing) {
+      nextThing = T + rnd(70, 140);
+      if (things.filter(t => !t.leaving).length < 9) {
+        const used = new Set(things.map(t => t.kind));
+        const fresh = KINDS.filter(k => !used.has(k));
+        const [x, y] = freeSpot(U * 0.22);
+        spawnThing(fresh.length && Math.random() < 0.7 ? pick(fresh) : pick(KINDS), x, y); tally.arrived++;
+      }
+    }
+    if (T > nextLeave) {
+      nextLeave = T + rnd(90, 160);
+      const live = things.filter(t => !t.leaving);
+      if (live.length > 4) { const t = pick(live); t.leaving = true; tally.left++; }
+    }
+    if (T > nextMigrate) {
+      nextMigrate = T + rnd(35, 70);
+      const b = pick(beings); if (b) { b.v = (b.v + 1 + Math.floor(Math.random() * (villages.length - 1))) % villages.length; tally.moved++; }
+    }
+
+    const damp = Math.exp(-1.4 * dt), sq = Math.sqrt(dt);
+    for (const t of things) {
+      let ax = (W / 2 - t.x) * 0.004, ay = (H / 2 - t.y) * 0.004;
+      let nv = villages[0], nd = 1e9; for (const v of villages) { const d = Math.hypot(v.x - t.x, v.y - t.y); if (d < nd) { nd = d; nv = v; } }
+      if (nv && nd > U * 0.2) { ax += (nv.x - t.x) * 0.004; ay += (nv.y - t.y) * 0.004; }
+      for (const o of things) if (o !== t) { const dx = t.x - o.x, dy = t.y - o.y, d = Math.hypot(dx, dy) || 1, mn = U * 0.24; if (d < mn) { ax += (dx / d) * (mn - d) * 0.6; ay += (dy / d) * (mn - d) * 0.6; } }
+      const mg = U * 0.1;
+      if (t.x < mg) ax += (mg - t.x) * 1.5; if (t.x > W - mg) ax -= (t.x - W + mg) * 1.5;
+      if (t.y < mg) ay += (mg - t.y) * 1.5; if (t.y > H - mg * 1.6) ay -= (t.y - H + mg * 1.6) * 1.5;
+      t.vx = t.vx * damp + ax * dt + gauss() * U * 0.006 * sq; t.vy = t.vy * damp + ay * dt + gauss() * U * 0.006 * sq;
+      const sp = Math.hypot(t.vx, t.vy), vm = U * 0.016; if (sp > vm) { t.vx *= vm / sp; t.vy *= vm / sp; }
+      t.x += t.vx * dt; t.y += t.vy * dt; t.rot += t.wr * dt * Math.sin(T * 0.2 + t.id);
+      t.alpha = t.leaving ? Math.max(0, t.alpha - dt / 6) : Math.min(1, t.alpha + dt / 2);
+      t.glow = Math.max(0, t.glow - dt * 0.8);
+    }
+    // a thing that has left is remembered, by kind, for a while
+    for (const t of things) if (t.leaving && t.alpha <= 0) {
+      for (const b of beings) { const w = topWord(b, t); if (w) b.kmem.set(t.kind, w); b.lex.delete(t.id); }
+      t.gone = true;
+    }
+    things = things.filter(t => !t.gone);
+
+    for (const b of beings) {
+      const home = villages[b.v];
+      let ax = 0, ay = 0;
+      if (b.target && (b.target.leaving || T > b.targetUntil)) b.target = null;
+      const dx = home.x - b.x, dy = home.y - b.y, d = Math.hypot(dx, dy) || 1, rh = U * 0.17;
+      if (d > rh) { const a = Math.min(U * 0.12, (d - rh) * 0.5) * (b.target ? 0.15 : 1); ax += (dx / d) * a; ay += (dy / d) * a; }
+      if (b.target) { const tx = b.target.x - b.x, ty = b.target.y - b.y, td = Math.hypot(tx, ty) || 1; if (td > U * 0.11) { ax += (tx / td) * U * 0.08; ay += (ty / td) * U * 0.08; } }
+      for (const o of beings) if (o !== b) { const ox = b.x - o.x, oy = b.y - o.y, od = Math.hypot(ox, oy) || 1, mn = U * 0.085 * S; if (od < mn) { ax += (ox / od) * (mn - od) * 2; ay += (oy / od) * (mn - od) * 2; } }
+      for (const t of things) { const ox = b.x - t.x, oy = b.y - t.y, od = Math.hypot(ox, oy) || 1, mn = U * 0.075 * S; if (od < mn) { ax += (ox / od) * (mn - od) * 2; ay += (oy / od) * (mn - od) * 2; } }
+      const mg = U * 0.08;
+      if (b.x < mg) ax += (mg - b.x) * 2; if (b.x > W - mg) ax -= (b.x - W + mg) * 2;
+      if (b.y < mg * 1.5) ay += (mg * 1.5 - b.y) * 2; if (b.y > H - mg) ay -= (b.y - H + mg) * 2;
+      b.vx = b.vx * damp + ax * dt + gauss() * U * 0.01 * sq; b.vy = b.vy * damp + ay * dt + gauss() * U * 0.01 * sq;
+      const sp = Math.hypot(b.vx, b.vy), vm = U * (T < b.busy ? 0.008 : 0.04); if (sp > vm) { b.vx *= vm / sp; b.vy *= vm / sp; }
+      b.x += b.vx * dt; b.y += b.vy * dt;
+      b.alpha = Math.min(1, b.alpha + dt / 1.5);
+      b.flash = Math.max(0, b.flash - dt * 1.2);
+      b.hop = Math.max(0, b.hop - dt * 2.6);
+      b.w1 += dt * 0.9; b.w2 += dt * 0.7;
+      b.mouth = T < b.talkUntil ? 0.35 + 0.65 * Math.abs(Math.sin(((T - b.lineT) * Math.PI) / 0.12)) : Math.max(0, b.mouth - dt * 6);
+      if (T > b.blinkNext) { b.blinkAt = T; b.blinkNext = T + rnd(2, 6); }
+      let g = b.look && T < b.lookUntil ? b.look : b.target;
+      let gx, gy; if (g) { gx = g.x - b.x; gy = g.y - b.y; } else { gx = Math.cos(T * 0.3 + b.ph); gy = Math.sin(T * 0.23 + b.ph) * 0.6; }
+      const gl = Math.hypot(gx, gy) || 1; b.gx = lerp(b.gx, gx / gl, clamp(dt * 7)); b.gy = lerp(b.gy, gy / gl, clamp(dt * 7));
+      if (b.line && T - b.lineT > b.lineDur + 0.6) b.line = null;
+      b.next -= dt;
+      if (b.next <= 0 && T > b.busy && b.alpha > 0.8 && gen >= 1) { b.next = rnd(4, 7.5); talk(b); }
+    }
+    for (const bd of beads) { bd.k += dt; if (bd.k >= bd.dur && !bd.done) { bd.done = true; arrive(bd); } }
+    beads = beads.filter(bd => !bd.done || bd.k < bd.dur + 0.6);
+
+    // what each thing is called, by how many, and where
+    if (Math.floor(T * 2) !== Math.floor((T - dt) * 2)) for (const t of things) {
+      const count = new Map(), byV = new Map();
+      for (const b of beings) { const w = topWord(b, t); if (!w) continue; count.set(w, (count.get(w) || 0) + 1); const vv = byV.get(w) || new Array(villages.length).fill(0); vv[b.v]++; byV.set(w, vv); }
+      const n = beings.length;
+      t.labels = [...count.entries()].sort((p, q) => q[1] - p[1]).slice(0, 3).map(([w, c]) => {
+        const vv = byV.get(w); let vi = 0; for (let i = 1; i < vv.length; i++) if (vv[i] > vv[vi]) vi = i;
+        return { w, share: c / n, v: vi };
+      });
+    }
+  }
+
+  // ---------- drawing ----------
+  function icon(t, s, a) {
+    ctx.save(); ctx.translate(t.x, t.y); ctx.rotate(t.rot);
+    ctx.lineWidth = 1.4; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(236,229,213,' + a.toFixed(3) + ')'; ctx.fillStyle = ctx.strokeStyle;
+    ctx.beginPath();
+    switch (t.kind) {
+      case 'moon': ctx.arc(0, 0, s, 1.318, 4.965); ctx.arc(0.5 * s, 0, s, 4.46, 1.823, true); ctx.closePath(); break;
+      case 'snake':
+        for (let i = 0; i <= 24; i++) { const u = i / 24 * 2 - 1, x = u * s * 1.2, y = Math.sin(u * 2.5 * Math.PI) * s * 0.3; if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); }
+        ctx.stroke(); ctx.beginPath(); ctx.arc(s * 1.25, Math.sin(2.5 * Math.PI) * s * 0.3, s * 0.12, 0, TAU); ctx.fill(); ctx.restore(); return;
+      case 'drop': ctx.moveTo(0, -s); ctx.bezierCurveTo(s * 0.9, -s * 0.1, s * 0.7, s * 0.9, 0, s * 0.9); ctx.bezierCurveTo(-s * 0.7, s * 0.9, -s * 0.9, -s * 0.1, 0, -s); break;
+      case 'flame': ctx.moveTo(0, -s); ctx.bezierCurveTo(s * 0.9, -s * 0.15, s * 0.65, s * 0.85, 0, s * 0.85); ctx.bezierCurveTo(-s * 0.65, s * 0.85, -s * 0.7, s * 0.05, -s * 0.2, -s * 0.3); ctx.bezierCurveTo(-s * 0.1, -s * 0.55, 0, -s * 0.7, 0, -s);
+        ctx.moveTo(0, s * 0.6); ctx.bezierCurveTo(s * 0.35, s * 0.4, s * 0.2, 0, 0, -s * 0.2); break;
+      case 'star': for (let k = 0; k <= 10; k++) { const r = k % 2 ? s * 0.42 : s, an = -Math.PI / 2 + (k * Math.PI) / 5; if (k) ctx.lineTo(Math.cos(an) * r, Math.sin(an) * r); else ctx.moveTo(Math.cos(an) * r, Math.sin(an) * r); } break;
+      case 'fish': ctx.ellipse(-s * 0.15, 0, s * 0.7, s * 0.38, 0, 0, TAU); ctx.moveTo(s * 0.52, 0); ctx.lineTo(s * 0.98, -s * 0.36); ctx.lineTo(s * 0.98, s * 0.36); ctx.closePath();
+        ctx.stroke(); ctx.beginPath(); ctx.arc(-s * 0.55, -s * 0.06, s * 0.07, 0, TAU); ctx.fill(); ctx.restore(); return;
+      case 'eye': ctx.moveTo(-s, 0); ctx.quadraticCurveTo(0, -s * 0.85, s, 0); ctx.quadraticCurveTo(0, s * 0.85, -s, 0); ctx.moveTo(s * 0.3, 0); ctx.arc(0, 0, s * 0.3, 0, TAU); break;
+      case 'door': ctx.moveTo(-s * 0.5, s); ctx.lineTo(-s * 0.5, -s * 0.3); ctx.arc(0, -s * 0.3, s * 0.5, Math.PI, 0); ctx.lineTo(s * 0.5, s); ctx.moveTo(s * 0.32, s * 0.25); ctx.arc(s * 0.25, s * 0.25, s * 0.07, 0, TAU); break;
+      case 'tree': ctx.moveTo(0, s); ctx.lineTo(0, s * 0.1); ctx.moveTo(s * 0.6, -s * 0.35); ctx.arc(0, -s * 0.35, s * 0.6, 0, TAU); break;
+      case 'bird': ctx.moveTo(-s, 0); ctx.quadraticCurveTo(-s * 0.5, -s * 0.65, 0, 0.05 * s); ctx.quadraticCurveTo(s * 0.5, -s * 0.65, s, 0); break;
+      case 'stone': for (let k = 0; k <= 7; k++) { const an = (k / 7) * TAU, r = s * 0.8 * t.stone[k % 7]; if (k) ctx.lineTo(Math.cos(an) * r, Math.sin(an) * r * 0.75); else ctx.moveTo(Math.cos(an) * r, Math.sin(an) * r * 0.75); } break;
+      case 'key': ctx.arc(-s * 0.55, 0, s * 0.35, 0, TAU); ctx.moveTo(-s * 0.2, 0); ctx.lineTo(s, 0); ctx.moveTo(s * 0.6, 0); ctx.lineTo(s * 0.6, s * 0.3); ctx.moveTo(s * 0.85, 0); ctx.lineTo(s * 0.85, s * 0.25); break;
+    }
+    ctx.stroke(); ctx.restore();
+  }
+  function glow(x, y, r, c, a) {
+    if (a <= 0.003 || r <= 0) return;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, 'rgba(' + c + ',' + a + ')'); g.addColorStop(0.4, 'rgba(' + c + ',' + a * 0.3 + ')'); g.addColorStop(1, 'rgba(' + c + ',0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+  }
+  const bodyR = () => U * 0.028 * S;
+  const bodyY = b => b.y - Math.sin(Math.PI * b.hop) * bodyR() * 0.25;
+  function drawBeing(b) {
+    const R = bodyR(), x = b.x, y = bodyY(b), cs = css(b.col), al = b.alpha;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.beginPath();
+    for (let k = 0; k <= 28; k++) {
+      const th = (k / 28) * TAU, r = R * (1 + 0.03 * Math.sin(T * 1.7 + b.ph)) * (1 + 0.05 * Math.sin(3 * th + b.w1) + 0.035 * Math.sin(5 * th - b.w2));
+      const px = x + Math.cos(th) * r, py = y + Math.sin(th) * r * 0.9;
+      if (k) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(' + cs + ',' + (0.12 * al).toFixed(3) + ')'; ctx.fill();
+    ctx.lineWidth = 1.2; ctx.strokeStyle = 'rgba(' + cs + ',' + (0.65 * al).toFixed(3) + ')'; ctx.stroke();
+    if (b.flash > 0.02) { ctx.globalCompositeOperation = 'lighter'; glow(x, y, R * 2.4, cs, 0.25 * b.flash * al); ctx.globalCompositeOperation = 'source-over'; }
+    const er = Math.max(1.6, R * 0.17), ex = R * 0.32, ey = -R * 0.2;
+    const since = T - b.blinkAt, open = since < 0.14 ? 0.12 + 0.88 * Math.abs(since / 0.07 - 1) : 1;
+    for (const sx of [-1, 1]) {
+      const cx = x + sx * ex, cy = y + ey;
+      ctx.fillStyle = 'rgba(236,229,213,' + (0.94 * al).toFixed(3) + ')';
+      ctx.beginPath(); ctx.ellipse(cx, cy, er, er * 1.15 * open, 0, 0, TAU); ctx.fill();
+      if (open > 0.45) { ctx.fillStyle = 'rgba(6,6,8,' + al.toFixed(3) + ')'; ctx.beginPath(); ctx.arc(cx + b.gx * er * 0.45, cy + b.gy * er * 0.5, er * 0.52, 0, TAU); ctx.fill(); }
+    }
+    const my = y + R * 0.3, mw = R * 0.16;
+    ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(236,229,213,' + (0.6 * al).toFixed(3) + ')';
+    if (b.mouth > 0.08) { ctx.fillStyle = 'rgba(6,6,8,' + al.toFixed(3) + ')'; ctx.beginPath(); ctx.ellipse(x, my, mw * 0.75, Math.max(1, R * 0.12 * b.mouth), 0, 0, TAU); ctx.fill(); ctx.stroke(); }
+    else { ctx.beginPath(); ctx.arc(x, my - mw, mw, 0.3 * Math.PI, 0.7 * Math.PI); ctx.stroke(); }
+  }
+  function draw() {
+    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+    ctx.fillStyle = '#040405'; ctx.fillRect(0, 0, W, H);
+    const s = U * 0.034 * S;
+    // the sign's path: from the one who speaks, through the thing, to the one who hears
+    ctx.globalCompositeOperation = 'lighter'; ctx.lineWidth = 1;
+    for (const bd of beads) {
+      const a = bd.done ? 1 - (bd.k - bd.dur) / 0.6 : 1, c = css(bd.s.col);
+      ctx.strokeStyle = 'rgba(' + c + ',' + (0.13 * a).toFixed(3) + ')';
+      ctx.beginPath(); ctx.moveTo(bd.s.x, bd.s.y); ctx.lineTo(bd.t.x, bd.t.y); ctx.lineTo(bd.h.x, bd.h.y);
+      if (bd.done && bd.ok) ctx.closePath();
+      ctx.stroke();
+      if (!bd.done) {
+        const q = ease(bd.k / bd.dur), l1 = dist(bd.s, bd.t), l2 = dist(bd.t, bd.h), at = q * (l1 + l2);
+        let x, y; if (at < l1) { const u = at / (l1 || 1); x = lerp(bd.s.x, bd.t.x, u); y = lerp(bd.s.y, bd.t.y, u); } else { const u = (at - l1) / (l2 || 1); x = lerp(bd.t.x, bd.h.x, u); y = lerp(bd.t.y, bd.h.y, u); }
+        glow(x, y, U * 0.014, c, 0.5);
+        ctx.fillStyle = 'rgba(255,250,240,0.95)'; ctx.beginPath(); ctx.arc(x, y, 1.6, 0, TAU); ctx.fill();
+      }
+    }
+    // the things, and what they are called
+    for (const t of things) {
+      if (t.glow > 0.02) glow(t.x, t.y, s * 2.2, '236,229,213', 0.12 * t.glow * t.alpha);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    for (const t of things) icon(t, s, (0.55 + 0.35 * t.glow) * t.alpha);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.lineJoin = 'round';
+    for (const t of things) {
+      let y = t.y + s * 1.25 + FS;
+      t.labels.forEach((L, i) => {
+        const fs = Math.round(FS * (i === 0 ? 1 : 0.86));
+        ctx.font = fs + 'px Georgia, "Times New Roman", serif';
+        const c = css(mix(villages[L.v] ? villages[L.v].col : BONE, BONE, 0.45));
+        const a = (0.18 + 0.82 * Math.pow(L.share, 0.7)) * t.alpha * (i === 0 ? 1 : 0.7);
+        ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(4,4,5,' + (0.85 * t.alpha).toFixed(3) + ')';
+        ctx.fillStyle = 'rgba(' + c + ',' + a.toFixed(3) + ')';
+        ctx.strokeText(L.w, t.x, y); ctx.fillText(L.w, t.x, y);
+        y += fs * 1.2;
+      });
+    }
+    for (const b of beings) drawBeing(b);
+    // what they say, above their heads
+    ctx.font = 'italic ' + FS + 'px Georgia, "Times New Roman", serif';
+    const placed = [];
+    for (const b of beings.filter(b => b.line).sort((p, q) => q.lineT - p.lineT)) {
+      const age = T - b.lineT, a = (age < 0.15 ? age / 0.15 : age > b.lineDur ? 1 - (age - b.lineDur) / 0.6 : 1) * b.alpha;
+      if (a <= 0) continue;
+      const w = ctx.measureText(b.line).width, h = FS * 1.2;
+      let top = bodyY(b) - bodyR() - 8 - h;
+      const cx = clamp(b.x, w / 2 + 8, W - w / 2 - 8);
+      for (let k = 0; k < 3; k++) { const hit = placed.find(r => Math.abs(r.cx - cx) < (r.w + w) / 2 + 6 && top < r.top + r.h + 3 && top + h > r.top - 3); if (!hit) break; top = hit.top - h - 4; }
+      placed.push({ cx, top, w, h });
+      const c = b.lineKind === 'echo' ? css(mix(b.col, [255, 250, 240], 0.7)) : css(mix(b.col, BONE, 0.55));
+      const aa = a * (b.lineKind === 'ask' ? 0.7 : 1);
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(4,4,5,' + (0.85 * a).toFixed(3) + ')';
+      ctx.fillStyle = 'rgba(' + c + ',' + aa.toFixed(3) + ')';
+      ctx.strokeText(b.line, cx, top + h * 0.8); ctx.fillText(b.line, cx, top + h * 0.8);
+    }
+  }
+
+  // ---------- sound: every syllable a note, every word a little melody ----------
+  const sound = (() => {
+    let a = null, on = false, master, padF;
+    const root = 55 * Math.pow(2, Math.floor(rnd(-2, 4)) / 12);
+    const DEG = { a: 0, e: 2, i: 4, o: 7, u: 9 };
+    function init() {
+      const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return false;
+      a = new AC();
+      const comp = a.createDynamicsCompressor(); comp.threshold.value = -16; comp.ratio.value = 4; comp.connect(a.destination);
+      master = a.createGain(); master.gain.value = 0; master.connect(comp);
+      padF = a.createBiquadFilter(); padF.type = 'lowpass'; padF.frequency.value = 300; padF.connect(master);
+      [[1, 0.08], [1.5, 0.04], [2, 0.03]].forEach(([r, g0]) => [-4, 4].forEach(det => {
+        const o = a.createOscillator(), g = a.createGain(); o.type = r === 1 ? 'sine' : 'triangle';
+        o.frequency.value = root * r; o.detune.value = det; g.gain.value = g0; o.connect(g); g.connect(padF); o.start();
+      }));
+      return true;
+    }
+    const panOf = x => clamp((x / W - 0.5) * 1.3, -0.7, 0.7);
+    function note(f, g0, len, x, at, type) {
+      const o = a.createOscillator(), g = a.createGain(); o.type = type; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(g0, at + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, at + len);
+      o.connect(g);
+      if (a.createStereoPanner) { const p = a.createStereoPanner(); p.pan.value = panOf(x); g.connect(p); p.connect(master); } else g.connect(master);
+      o.start(at); o.stop(at + len + 0.05);
+    }
+    return {
+      toggle: async () => {
+        if (!a && !init()) return false;
+        on = !on;
+        if (on) { try { await a.resume(); } catch (e) {} master.gain.setTargetAtTime(0.85, a.currentTime, 0.6); }
+        else master.gain.setTargetAtTime(0, a.currentTime, 0.25);
+        return on;
+      },
+      word: (b, w, kind) => {
+        if (!on) return;
+        const sy = w.match(SYL_RE) || [w];
+        const base = root * 4 * Math.pow(2, ((villages[b.v] ? villages[b.v].oct : 0) * 5 % 12) / 12);
+        let at = a.currentTime + 0.02;
+        sy.forEach((s, i) => {
+          const v = s.match(/[aeiou]/)[0], c = s[0], plosive = 'ktp'.includes(c);
+          let semi = DEG[v] + (s.endsWith('n') ? -12 : 0);
+          if (kind === 'ask' && i === sy.length - 1) semi += 5;
+          const f = base * Math.pow(2, semi / 12);
+          note(f, kind === 'echo' ? 0.07 : 0.055, plosive ? 0.16 : 0.3, b.x, at, plosive ? 'triangle' : 'sine');
+          at += plosive ? 0.12 : 0.16;
+        });
+      },
+      mood: c => { if (on) padF.frequency.setTargetAtTime(220 + 900 * c, a.currentTime, 2); }
+    };
+  })();
+  cv.addEventListener('pointerdown', () => { sound.toggle(); });
+
+  // ---------- size ----------
+  function size() {
+    const oW = W, oH = H;
+    DPR = Math.min(devicePixelRatio || 1, 2);
+    W = innerWidth; H = innerHeight; U = Math.min(W, H);
+    cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    S = U < 520 ? 1.25 : 1;
+    FS = Math.round(clamp(U * 0.03, 12, 15));
+    if (oW) {
+      const sx = W / oW, sy = H / oH;
+      for (const o of [...things, ...beings, ...villages]) { o.x *= sx; o.y *= sy; }
+    }
+  }
+
+  // ---------- run ----------
+  let last = performance.now(), moodAt = 0;
+  const agreement = () => recent.length ? recent.reduce((s, v) => s + v, 0) / recent.length : 0;
+  function loop(now) {
+    const dt = clamp((now - last) / 1000, 0, 0.05); last = now;
+    update(dt);
+    draw();
+    if (T - moodAt > 0.5) { moodAt = T; sound.mood(agreement()); }
+    requestAnimationFrame(loop);
+  }
+  // for testing from outside; nothing on screen
+  window.__sem = {
+    ff(sec, h = 1 / 30) { for (let t = 0; t < sec; t += h) update(h); draw(); },
+    stats() {
+      return {
+        T: +T.toFixed(1), beings: beings.length, villages: villages.length, agreement: +agreement().toFixed(2), tally: { ...tally },
+        things: things.map(t => ({ kind: t.kind, names: t.labels.map(L => L.w + ':' + Math.round(L.share * beings.length) + '@v' + L.v).join(' ') }))
+      };
+    }
+  };
+  addEventListener('resize', size);
+  size();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
