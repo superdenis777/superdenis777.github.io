@@ -1,0 +1,1188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rooms</title>
+<meta name="description" content="A Taipei walk-up in Xizhi, cut open like a dollhouse, living through days that never repeat. Tap anywhere for sound.">
+<meta name="theme-color" content="#0b0f22">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Rooms">
+<meta property="og:description" content="A Taipei walk-up in Xizhi, cut open like a dollhouse, living through days that never repeat. Tap anywhere for sound.">
+<meta property="og:url" content="https://superdenis777.github.io/rooms/">
+<meta property="og:image" content="https://superdenis777.github.io/rooms/cover.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@1,300&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@700&text=%E6%97%A9%E9%A4%90%E8%8C%B6%E9%BA%B5%E7%BE%8E%E8%AA%9E%E8%B6%85%E5%95%86%E8%97%A5%E5%B1%80%E6%A9%9F%E8%BB%8A%E8%A1%8C%E5%BD%A9%E5%88%B8%E7%89%99%E7%A7%91%E6%B1%90%E6%AD%A2%E7%A6%8F%E5%BE%B7%E5%AE%AE%E6%97%85%E7%A4%BE%E7%87%92%E8%87%98%E5%B0%8F%E5%90%83%E5%A5%B6%E5%86%B0%E5%85%AC%E5%AF%93KTV24H&display=swap">
+<style>
+  /* A walk-up in Xizhi, cut open like a dollhouse. The page is a picture: one theme on purpose, the night sets the colours. */
+  :root { --bg: #0b0f22; --ink: rgba(250, 244, 232, 0.94); --story: 'Fraunces', Georgia, serif; color-scheme: dark; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--ink); }
+  body { overflow: hidden; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: pointer; image-rendering: pixelated; }
+  .over { position: fixed; left: 0; right: 0; text-align: center; pointer-events: none; padding: 0 max(16px, env(safe-area-inset-left, 0px)); opacity: 0; transition: opacity 1.4s ease; }
+  #title { top: 7%; font: italic 300 clamp(40px, 11vw, 88px)/1 var(--story); text-shadow: 0 2px 24px rgba(0, 0, 20, 0.7); }
+  #hint { bottom: max(18px, calc(env(safe-area-inset-bottom, 0px) + 12px)); font: italic 300 clamp(14px, 3.8vw, 18px)/1.4 var(--story); letter-spacing: 0.04em; text-shadow: 0 1px 10px rgba(0, 0, 20, 0.9); }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="A Taipei walk-up apartment building in Xizhi drawn in pixel art and cut open like a dollhouse, living through days that never repeat: people cook, sleep, watch TV, pray at a home altar, play mahjong on Saturday nights, run down with their bags when the garbage truck comes playing Für Elise; a breakfast shop opens at dawn, scooters swarm at rush hour, it rains, and a man in the rooftop add-on plays guitar to his cat. Tap anywhere for sound."></canvas>
+<div id="title" class="over">Rooms</div>
+<div id="hint" class="over">tap anywhere for sound</div>
+<script>
+(() => {
+  'use strict';
+  const cv = document.getElementById('c'), ctx = cv.getContext('2d', { alpha: false });
+  const titleEl = document.getElementById('title'), hintEl = document.getElementById('hint');
+  const mkC = () => { const c = document.createElement('canvas'); return [c, c.getContext('2d')]; };
+  const [lo, lc] = mkC(), [wc, wx] = mkC(), [lm, lx] = mkC(), [mk, mx] = mkC();
+  let nbc = null, nbx = null;
+  const TAU = Math.PI * 2, DT = 1 / 60;
+  const clamp = (v, a, b) => v < a ? a : v > b ? b : v, lerp = (a, b, t) => a + (b - a) * t;
+  const sm = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+  const rand = Math.random, pick = a => a[Math.floor(rand() * a.length)], J = a => (rand() * 2 - 1) * a;
+  let sd = 1; const srnd = () => { sd = (sd * 16807) % 2147483647; return (sd - 1) / 2147483646; }, spick = a => a[Math.floor(srnd() * a.length)];
+  const hex = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+  const mixc = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
+  const css = (c, a) => a === undefined ? `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})` : `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a.toFixed(3)})`;
+  const shade = (h, k) => css(hex(h).map(v => v * k));
+
+  // ---------- the clock: one minute of the building's day passes every second ----------
+  const SPEED = 1, START = 4 * 1440 + 17 * 60 + 16; // Friday, 17:16
+  let rt = 0;
+  const now = () => START + rt * SPEED, mod = m => ((m % 1440) + 1440) % 1440, dayOf = m => Math.floor(m / 1440) % 7;
+  function kfc(arr, t) {
+    for (let i = 0; i < arr.length - 1; i++) { const a = arr[i], b = arr[i + 1]; if (t >= a[0] && t <= b[0]) return mixc(a[1], b[1], (t - a[0]) / (b[0] - a[0] || 1)); }
+    return arr[arr.length - 1][1];
+  }
+  const H6 = a => a.map(([t, c]) => [t, hex(c)]);
+  const AMB = H6([[0, '#3a4270'], [290, '#3a4270'], [340, '#6e6496'], [375, '#e1beb4'], [420, '#ffffff'], [985, '#fffcf4'], [1018, '#ffd6af'], [1040, '#c492a8'], [1066, '#6c6296'], [1098, '#3c4472'], [1440, '#3a4270']]);
+  const SKYT = H6([[0, '#070b1f'], [300, '#070b1f'], [345, '#2a3466'], [380, '#6f8fc8'], [430, '#7fb1e0'], [990, '#7fb1e0'], [1022, '#4f69a8'], [1048, '#2b3470'], [1080, '#0d1330'], [1440, '#070b1f']]);
+  const SKYB = H6([[0, '#2c2442'], [300, '#2c2442'], [345, '#b0707a'], [380, '#f0b48a'], [430, '#d8e8f0'], [985, '#e6eef0'], [1015, '#f6c08a'], [1036, '#e08a7a'], [1058, '#7a5a8a'], [1090, '#35294c'], [1440, '#2c2442']]);
+
+  // ---------- layout: everything is drawn at a small pixel size, then scaled up with hard edges ----------
+  let W = 0, H = 0, DPR = 1, S = 4, AW = 200, AH = 400, port = false;
+  const UW = 52, STW = 18, BW = 130, FH = 30;
+  let ST, SW, LN1, LN2, bx, Ax0, Ax1, sx0, sx1, Bx0, Bx1, landX, midX, gateX, roofY;
+  const yF = f => ST - f * FH;
+  function layout() {
+    DPR = Math.min(window.devicePixelRatio || 1, 3); W = innerWidth; H = innerHeight;
+    const dw = Math.round(W * DPR), dh = Math.round(H * DPR); cv.width = dw; cv.height = dh;
+    port = H > W;
+    S = Math.max(1, Math.floor(Math.min(W / (port ? 165 : 200), H / 330) * DPR));
+    AW = Math.ceil(dw / S); AH = Math.ceil(dh / S);
+    for (const c of [lo, wc, lm, mk]) { c.width = AW; c.height = AH; }
+    ST = AH - 42; SW = ST + 4; LN1 = ST + 17; LN2 = ST + 29;
+    bx = Math.round(AW / 2 - BW / 2);
+    Ax0 = bx + 2; Ax1 = Ax0 + UW; sx0 = Ax1 + 2; sx1 = sx0 + STW; Bx0 = sx1 + 2; Bx1 = Bx0 + UW;
+    landX = sx0 + 3; midX = sx1 - 3; gateX = sx0 + 9; roofY = yF(6);
+    buildWorld();
+    ctx.imageSmoothingEnabled = false;
+  }
+
+  // ---------- people ----------
+  const SKIN = ['#f2cba8', '#e6b48e', '#d29d74', '#b98260', '#f6d9bd'];
+  const HAIRC = ['#1a1512', '#231b16', '#2e221a', '#3f2d20', '#5b3d29'];
+  const SHIRTS = ['#e8e4dc', '#3e5f8a', '#a33b3b', '#4a7a5a', '#d9a441', '#6b4f8a', '#e07a5f', '#2f2f35', '#7fb3c8', '#c76b98', '#8a9a5b', '#f0d0c0', '#5a6f7f', '#d9d9d9'];
+  const PANTS = ['#2b3447', '#33302d', '#4a4036', '#1f2733', '#5d5a55', '#3b4a5e', '#6b5b4b'];
+  const UMB = ['#d9534f', '#3e7cb1', '#f0c040', '#2f2f35', '#6bb38a', '#c76b98', '#e8e4dc', '#7a5ab0'];
+  const look = (o = {}) => ({ skin: o.skin || pick(SKIN), hair: o.hair || pick(HAIRC), shirt: o.shirt || pick(SHIRTS), pants: o.pants || pick(PANTS), shoe: o.shoe || '#262322', h: o.h || 10, long: !!o.long, hunch: !!o.hunch, beard: !!o.beard, glasses: !!o.glasses, bag: o.bag || null });
+  // a person is about ten pixels tall; x, y is where the feet touch the floor
+  function person(g, X, Y, L, pose, dir, fr, o = {}) {
+    const x = Math.round(X), y = Math.round(Y), h = L.h;
+    const R = (dx, dy, w, hh, c) => { g.fillStyle = c; g.fillRect(x + dx, y + dy, w, hh); };
+    const d = dir || 1, front = o.front || pose === 'sitf' || pose === 'standf', back = o.back || pose === 'sitb';
+    let oy = 0; const seated = pose === 'sit' || pose === 'sitf' || pose === 'sitb' || pose === 'guitar';
+    if (seated) oy = 1;
+    const hx = L.hunch && !front && !back ? d : 0, hy = L.hunch ? 1 : 0;
+    const top = y - h + oy + hy;
+    const torsoR = h >= 10 ? 4 : h >= 9 ? 3 : 2, tY = -h + 3 + oy;
+    // umbrella above
+    if (o.umb) { const u = o.umb, uy = -h - 4 + oy; R(-3, uy + 1, 7, 1, u); R(-2, uy, 5, 1, u); R(-1, uy - 1, 3, 1, shade(u, 1.15)); R(0, uy + 2, 1, 3, '#3a3a3a'); }
+    // legs
+    const pants = L.pants, shoe = L.shoe;
+    if (pose === 'walk') {
+      const f = fr % 2;
+      R(-1, -3, 3, 1, pants);
+      if (f) { R(-1, -2, 1, 1, pants); R(1, -2, 1, 1, pants); R(-1, -1, 1, 1, shoe); R(1, -1, 1, 1, shoe); }
+      else { R(0, -2, 1, 1, pants); R(0, -1, 1, 1, shoe); R(-d, -2, 1, 1, pants); R(-d, -1, 1, 1, shoe); }
+    } else if (pose === 'sit' || pose === 'guitar') {
+      const l0 = Math.min(-1, 2 * d), l1 = Math.max(1, 2 * d);
+      R(l0, -3, l1 - l0 + 1, 1, pants); R(2 * d, -2, 1, 1, pants); R(2 * d, -1, 1, 1, shoe); R(3 * d, -1, 1, 1, shoe);
+    } else if (pose === 'sitf' || pose === 'sitb') {
+      R(-1, -2, 1, 1, pants); R(1, -2, 1, 1, pants); R(-1, -1, 1, 1, shoe); R(1, -1, 1, 1, shoe);
+    } else if (pose === 'taichi') {
+      R(-1, -3, 3, 1, pants); R(-2, -2, 1, 1, pants); R(2, -2, 1, 1, pants); R(-2, -1, 1, 1, shoe); R(2, -1, 1, 1, shoe);
+    } else if (pose === 'yoga') {
+      // downward dog, then up
+      const up = (fr >> 2) % 2;
+      if (up) { R(-3 * d, -1, 1, 1, shoe); R(-2 * d, -2, 1, 1, pants); R(-1 * d, -3, 1, 1, pants); R(0, -4, 1, 1, L.shirt); R(d, -3, 1, 1, L.shirt); R(2 * d, -2, 1, 1, L.skin); R(3 * d, -1, 1, 1, L.skin); R(2 * d, -4, 2, 2, L.hair); return; }
+      R(-3 * d, -1, 1, 1, shoe); R(-3 * d, -2, 5, 1, pants); R(2 * d, -3, 2, 1, L.shirt); R(3 * d, -4, 2, 2, L.hair); R(1 * d, -1, 1, 1, L.skin); return;
+    } else {
+      R(-1, -3, 3, 1, pants); R(-1, -2, 1, 1, pants); R(1, -2, 1, 1, pants); R(-1, -1, 1, 1, shoe); R(1, -1, 1, 1, shoe);
+    }
+    // torso
+    R(-1, tY, 3, torsoR, L.shirt);
+    if (front || back) { R(-2, tY, 1, torsoR - 1, L.shirt); R(2, tY, 1, torsoR - 1, L.shirt); R(-2, tY + torsoR - 1, 1, 1, L.skin); R(2, tY + torsoR - 1, 1, 1, L.skin); }
+    // head
+    const hy0 = top;
+    if (front) {
+      R(-1 + hx, hy0, 3, 1, L.hair); R(-1 + hx, hy0 + 1, 3, 2, L.skin);
+      if (L.long) { R(-2, hy0, 1, 4, L.hair); R(2, hy0, 1, 4, L.hair); }
+      if (L.glasses) R(-1, hy0 + 1, 3, 1, '#3a3a40');
+      if (L.beard) R(-1, hy0 + 2, 3, 1, L.hair);
+    } else if (back) {
+      R(-1, hy0, 3, 3, L.hair); if (L.long) R(-1, hy0 + 3, 3, 2, L.hair);
+    } else {
+      R(-1 + hx, hy0, 3, 1, L.hair);
+      R(-d + hx, hy0 + 1, 1, 1, L.hair); R(0 + hx, hy0 + 1, 1, 1, L.skin); R(d + hx, hy0 + 1, 1, 1, L.skin);
+      R(-d + hx, hy0 + 2, 1, 1, L.long ? L.hair : L.skin); R(0 + hx, hy0 + 2, 1, 1, L.skin); R(d + hx, hy0 + 2, 1, 1, L.skin);
+      if (L.long) R(-d + hx, hy0 + 3, 1, 2, L.hair);
+      if (L.glasses) R(d + hx, hy0 + 1, 1, 1, '#2a2a30');
+      if (L.beard) { R(0 + hx, hy0 + 2, 1, 1, L.hair); R(d + hx, hy0 + 2, 1, 1, L.hair); }
+    }
+    // arms and what the hands hold
+    const ay = tY + 1;
+    if (pose === 'cook') { const up = (fr >> 1) % 2; R(2 * d, ay - up, 1, 1, L.skin); }
+    else if (pose === 'pray') { R(2 * d, ay, 1, 1, L.skin); R(3 * d, ay - 3, 1, 3, '#7a5a3a'); R(3 * d, ay - 4, 1, 1, '#ff5a3a'); }
+    else if (pose === 'reach') { R(d, tY - 3, 1, 3, L.skin); }
+    else if (pose === 'taichi') { const s = Math.sin(fr * 0.12); R(2 * d, ay + Math.round(s), 2, 1, L.skin); R(-2 * d, ay - Math.round(s), 1, 1, L.skin); }
+    else if (pose === 'guitar') { R(d > 0 ? 0 : -2, -5, 3, 3, '#b0702a'); R(d, -4, 1, 1, '#3a2010'); R(3 * d, -6, 1, 1, '#5e3a1a'); R(4 * d, -7, 1, 1, '#5e3a1a'); R(5 * d, -8, 1, 1, '#4a2a10'); R(-d, -4 + ((fr >> 1) % 2), 1, 1, L.skin); R(3 * d, -5, 1, 1, L.skin); }
+    else if (o.carry) { R(2 * d, ay + 1, 1, 1, L.skin); R(2 * d, ay + 2, 2, 3, o.carry); }
+    else if (o.cup) { R(2 * d, ay, 1, 2, o.cup); }
+    if (o.phone) R(d, top + 3, 1, 1, '#bfe8ff');
+    if (o.helmet) { R(-1, hy0 - 1, 3, 2, o.helmet); R(-1 - (d > 0 ? 0 : 0), hy0 - 1, 1, 1, shade(o.helmet, 0.8)); }
+    if (o.hat) { R(-1, hy0 - 1, 3, 1, '#f2d020'); R(front || back ? -2 : d > 0 ? 0 : -2, hy0, front || back ? 5 : 3, 1, '#f2d020'); }
+  }
+  function cat(g, X, Y, col, pose, dir, fr) {
+    const x = Math.round(X), y = Math.round(Y), d = dir || 1;
+    const R = (dx, dy, w, h, c) => { g.fillStyle = c; g.fillRect(x + dx, y + dy, w, h); };
+    const dk = shade(col, 0.7);
+    if (pose === 'sleep') { R(-2, -2, 5, 2, col); R(2 * d, -3, 1, 1, col); R(-2 * d, -1, 1, 1, dk); return; }
+    if (pose === 'sit') { R(-1, -3, 2, 3, col); R(d > 0 ? 0 : -1, -5, 2, 2, col); R(d > 0 ? 0 : -1, -6, 1, 1, col); R(d > 0 ? 1 : 0, -6, 1, 1, col); R(-2 * d, -1, 2, 1, dk); return; }
+    const f = fr % 2;
+    R(-2, -3, 5, 2, col); R(2 * d, -4, 2, 2, col); R(2 * d + (d > 0 ? 1 : 0), -5, 1, 1, col);
+    R(-2 * d - (d > 0 ? 1 : 0), -5, 1, 2, dk);
+    R(-2 + f, -1, 1, 1, dk); R(2 - f, -1, 1, 1, dk);
+  }
+
+  // ---------- the building ----------
+  const UNITDEF = { '1A': 'owners', '1B': 'grandma', '2A': 'family', '2B': 'couple', '3A': 'student', '3B': 'night', '4A': 'mahjong', '4B': 'dadteen', '5A': 'oldman', '5B': 'woman', '6A': 'addon' };
+  const LAY = {
+    owners: [['fridge', 1, 5], ['stove', 6, 10], ['table', 20, 8], ['sofa', 30, 8], ['bed', 38, 14]],
+    grandma: [['altar', 1, 9], ['plant', 11, 3], ['table', 18, 8], ['sofa', 28, 8], ['bed', 38, 14]],
+    family: [['stove', 1, 10], ['fridge', 11, 5], ['table', 20, 8], ['sofa', 30, 8], ['bed', 38, 14]],
+    couple: [['stove', 1, 10], ['plant', 12, 3], ['table', 18, 8], ['sofa', 28, 9], ['bed', 38, 14]],
+    student: [['desk', 1, 10], ['shelf', 12, 6], ['kettle', 19, 6], ['bed', 27, 12], ['boxes', 42, 8]],
+    night: [['stove', 1, 10], ['table', 14, 8], ['sofa', 25, 9], ['bed', 37, 12], ['wardrobe', 49, 3]],
+    mahjong: [['altar', 1, 8], ['stove', 10, 10], ['mj', 25, 8], ['sofa', 36, 6], ['bed', 43, 9]],
+    dadteen: [['stove', 1, 10], ['table', 13, 7], ['desk', 22, 9], ['bed', 33, 9], ['bed', 43, 9]],
+    oldman: [['altar', 1, 8], ['stove', 10, 9], ['table', 22, 7], ['cage', 32, 4], ['bed', 38, 13]],
+    woman: [['stove', 1, 10], ['table', 13, 7], ['desk', 23, 9], ['mat', 33, 7], ['bed', 41, 11]],
+    addon: [['mattress', 2, 13], ['desk', 18, 9], ['gstand', 30, 3], ['mfridge', 35, 4], ['catbed', 41, 6]]
+  };
+  const WALLS = ['#d9d3c4', '#cfd8cf', '#d8cfc4', '#c9d3dc', '#e0d6c8', '#d6cad6', '#cfd9d2', '#e2dccb', '#d3d7c5', '#dcd0c2'];
+  const SOFAS = ['#6a7f9a', '#9a6a6a', '#7a8a5a', '#8a7a9a', '#a08a6a', '#5a6a7a'];
+  const BLANK = ['#e8a8a8', '#a8c8e8', '#f0d890', '#b8d8b0', '#d0b8e0', '#f2f0ea', '#e8c0a0'];
+  let units = {}, nbs = [], lamps = [], parked = [], stairLit = [0, 0, 0, 0, 0, 0, 0], laundry = 0, laundryOut = false;
+  let shopA = { open: 0 }, shopB = { open: 0 }, store = null, noodle = null, cram = null, signs = [], acs = [], stars = [], clouds = [], hills = [];
+  function buildWorld() {
+    sd = 20251106;
+    units = {};
+    for (const key in UNITDEF) {
+      const f = +key[0], side = key[1], x0 = side === 'A' ? Ax0 : Bx0, o = side === 'A' ? 1 : -1, type = UNITDEF[key];
+      const u = { key, f, side, x0, x1: x0 + UW, o, type, items: [], wall: spick(WALLS), floor: spick(['#bdb6aa', '#c7bfb0', '#b4ada3', '#c2b7a5']), cool: srnd() < 0.55, sofa: spick(SOFAS), blank: spick(BLANK), lamp: 0, tv: 0, desk: 0, red: 0, sleepers: [] };
+      if (type === 'addon') { u.wall = '#cbd2c8'; u.floor = '#9aa1a8'; u.cool = false; }
+      for (const [k, off, w] of LAY[type]) { const x = o > 0 ? x0 + off : x0 + UW - off - w; u.items.push({ k, x, w, o }); }
+      const beds = u.items.filter(i => i.k === 'bed' || i.k === 'mattress');
+      u.bed = beds[0]; u.bed2 = beds[1] || beds[0];
+      u.it = {}; for (const it of u.items) u.it[it.k] = u.it[it.k] || it;
+      units[key] = u;
+    }
+    // neighbours, left and right
+    nbs = [];
+    let x = bx - 5, first = true;
+    while (x > -40) { const w = first ? 92 : 64 + Math.floor(srnd() * 40); nbs.push(makeNb(x - w, w, first ? 8 : 3 + Math.floor(srnd() * 6), first ? 'cram' : spick(['pharm', 'repair', 'closed', 'lottery', 'temple', 'shop']))); x -= w + (first ? 4 : Math.floor(srnd() * 6)); first = false; }
+    x = bx + BW + 5; first = true;
+    while (x < AW + 40) { const w = first ? 96 : 64 + Math.floor(srnd() * 40); nbs.push(makeNb(x, w, first ? 6 : 3 + Math.floor(srnd() * 6), first ? 'store' : spick(['betel', 'repair', 'closed', 'shop', 'pharm', 'lottery']))); x += w + (first ? 4 : Math.floor(srnd() * 6)); first = false; }
+    store = nbs.find(n => n.kind === 'store'); noodle = nbs.find(n => n.kind === 'cram'); cram = noodle;
+    // street lamps and parked scooters
+    lamps = []; for (let lx0 = bx - 30 - 64 * 6; lx0 < AW + 64; lx0 += 64) if (lx0 > -10) lamps.push({ x: lx0, flick: srnd() < 0.15 });
+    parked = []; for (let px = -6; px < AW + 6; px += 7 + Math.floor(srnd() * 3)) { if (Math.abs(px - gateX) < 9 || srnd() < 0.35) continue; parked.push({ x: px, col: spick(['#d9d9d9', '#3a3a3a', '#c0392b', '#2f6fa0', '#e8c070', '#5a8a6a', '#f2f2f2', '#7a7a8a']), here: true, owner: null }); }
+    // sky
+    stars = []; for (let i = 0; i < 70; i++) stars.push({ x: Math.floor(srnd() * AW), y: Math.floor(srnd() * (ST - 200)), p: srnd() * TAU, b: 0.4 + srnd() * 0.6 });
+    clouds = []; for (let i = 0; i < 9; i++) { const c = { x: srnd() * AW * 1.4, y: 10 + srnd() * Math.max(30, ST - 240), w: 26 + Math.floor(srnd() * 40), sp: 0.4 + srnd() * 0.8, blobs: [] }; for (let j = 0; j < 6; j++) c.blobs.push([Math.floor(srnd() * c.w), Math.floor(srnd() * 6), 5 + Math.floor(srnd() * 8)]); clouds.push(c); }
+    hills = [[], []];
+    for (let l = 0; l < 2; l++) { const base = ST - (l ? 205 : 238), amp = l ? 22 : 30, p1 = srnd() * 9, p2 = srnd() * 9; for (let i = 0; i < AW; i++) hills[l].push(Math.round(base - amp * (0.55 + 0.3 * Math.sin(i / (40 + l * 18) + p1) + 0.15 * Math.sin(i / 13 + p2)))); }
+    acs = []; for (let f = 1; f <= 5; f++) { if (srnd() < 0.8) acs.push({ x: bx - 4, y: yF(f) - 12, drip: srnd() }); if (srnd() < 0.8) acs.push({ x: bx + BW, y: yF(f) - 14, drip: srnd() }); }
+    paintNbs();
+    signs = makeSigns();
+  }
+  const TILES = ['#c9b8a4', '#b9a99a', '#d6c9b6', '#a9a39a', '#c4b2a6', '#bfb7a8', '#d2c2b2', '#9fa6a8', '#c7aea0'];
+  function makeNb(x0, w, floors, kind) {
+    const fh = 27 + Math.floor(srnd() * 3), tile = spick(TILES), wins = [];
+    for (let f = 1; f < floors; f++) {
+      const n = Math.max(2, Math.floor(w / 24));
+      for (let i = 0; i < n; i++) {
+        const ww = 9 + Math.floor(srnd() * 4), cx0 = x0 + Math.round((i + 0.5) * w / n - ww / 2), y = ST - f * fh - 19;
+        wins.push({ x: cx0, y, w: ww, h: 12, warm: srnd() < 0.5, tv: srnd() < 0.25, cage: srnd() < 0.7, cur: spick(['#c9b28a', '#8aa0b8', '#b88a8a', '#a8b890', '#d8d0c0']), sil: srnd() < 0.3, on: [], f, cramWin: kind === 'cram' && f === 2 });
+      }
+    }
+    return { x0, w, floors, fh, top: ST - floors * fh, tile, wins, kind, addon: srnd() < 0.5, roofCol: spick(['#4f7fa0', '#5a8a6a', '#7a7a7a', '#a05a4a']) };
+  }
+  function paintNbs() {
+    [nbc, nbx] = mkC(); nbc.width = AW; nbc.height = AH; const g = nbx;
+    const R = (x, y, w, h, c) => { g.fillStyle = c; g.fillRect(x, y, w, h); };
+    for (const n of nbs) {
+      const { x0, w, top, fh, tile } = n;
+      R(x0, top, w, ST - top, tile);
+      // tiles: a faint grid
+      g.fillStyle = shade(tile, 0.94); for (let yy = top + 2; yy < ST - fh; yy += 3) g.fillRect(x0, yy, w, 1);
+      // floor bands
+      for (let f = 1; f <= n.floors; f++) R(x0, ST - f * fh, w, 1, shade(tile, 0.82));
+      // parapet and rooftop
+      R(x0 - 1, top - 3, w + 2, 3, shade(tile, 0.9));
+      if (n.addon) { const aw = Math.floor(w * 0.55), ax = x0 + Math.floor(w * 0.1); R(ax, top - 17, aw, 14, '#b9bcc0'); R(ax - 2, top - 19, aw + 4, 2, n.roofCol); for (let i = 0; i < aw; i += 3) R(ax + i, top - 16, 1, 12, '#a7aaae'); R(ax + 4, top - 12, 6, 5, '#3a4250'); }
+      const tx = x0 + w - 16; R(tx, top - 13, 11, 8, '#c8ccd0'); R(tx, top - 11, 11, 1, '#a9adb2'); R(tx + 1, top - 5, 1, 2, '#777'); R(tx + 9, top - 5, 1, 2, '#777');
+      if (srnd() < 0.6) { R(x0 + 6, top - 22, 1, 19, '#666'); R(x0 + 3, top - 20, 7, 1, '#666'); }
+      // windows: glass, frames, iron cages, air conditioners
+      for (const wi of n.wins) {
+        R(wi.x - 1, wi.y - 1, wi.w + 2, wi.h + 2, shade(tile, 0.75));
+        if (wi.cramWin) continue;
+        if (wi.cage) { R(wi.x - 2, wi.y - 2, wi.w + 4, 1, '#5a5f66'); R(wi.x - 2, wi.y + wi.h + 1, wi.w + 4, 1, '#5a5f66'); }
+        if (srnd() < 0.6) { const ax = wi.x + wi.w + 2; if (ax + 5 < x0 + w) { R(ax, wi.y + 4, 5, 4, '#d8dad6'); R(ax, wi.y + 6, 5, 1, '#b8bab6'); } }
+      }
+      // ground floor shop front
+      const gy0 = ST - fh + 2;
+      R(x0, gy0 - 1, w, 1, shade(tile, 0.7));
+      if (n.kind === 'temple') { R(x0 + 4, ST - 20, w - 8, 20, '#a8322a'); R(x0 + 1, ST - 24, w - 2, 4, '#3a5a8a'); R(x0 + 6, ST - 16, w - 12, 16, '#5a1a14'); }
+      n.graf = srnd() < 0.5;
+    }
+  }
+  function makeSigns() {
+    const s = [];
+    // the building's own shops: breakfast and tea, boards over the arcade
+    s.push({ x: Ax0 + 4, y: ST - 28, w: 30, h: 7, text: '早餐', bg: '#f2e6c8', fg: '#c0392b', lit: [300, 720] });
+    s.push({ x: Bx0 + 18, y: ST - 28, w: 30, h: 7, text: '茶', bg: '#2f6f5a', fg: '#f6f0dc', lit: [600, 1320] });
+    for (const n of nbs) {
+      const vx = n.x0 + (n.x0 < bx ? n.w - 9 : 3);
+      if (n.kind === 'cram') { s.push({ x: vx, y: ST - 3 * n.fh + 2, w: 7, h: 26, text: '美語', vert: true, bg: '#1f4f9a', fg: '#ffffff', lit: [960, 1290] }); s.push({ x: n.x0 + 6, y: ST - n.fh + 3, w: 20, h: 6, text: '麵', bg: '#a8322a', fg: '#ffe9b0', lit: [660, 1290] }); }
+      else if (n.kind === 'store') s.push({ x: n.x0 + 10, y: ST - n.fh + 3, w: n.w - 20, h: 6, text: '24H 超商', bg: '#f4f4f0', fg: '#2a6fb0', stripe: true, lit: [0, 1440] });
+      else if (n.kind === 'pharm') s.push({ x: vx, y: ST - 2 * n.fh, w: 7, h: 18, text: '藥局', vert: true, bg: '#2f8a4f', fg: '#ffffff', lit: [540, 1320] });
+      else if (n.kind === 'repair') s.push({ x: vx, y: ST - 2 * n.fh, w: 7, h: 26, text: '機車行', vert: true, bg: '#e8c040', fg: '#202020', lit: [540, 1200] });
+      else if (n.kind === 'lottery') s.push({ x: vx, y: ST - 2 * n.fh, w: 7, h: 18, text: '彩券', vert: true, bg: '#c0392b', fg: '#ffe070', lit: [600, 1380] });
+      else if (n.kind === 'betel') s.push({ x: vx, y: ST - 2 * n.fh, w: 7, h: 26, text: '燒臘', vert: true, bg: '#e85a8a', fg: '#ffffff', lit: [1000, 1440] });
+      else if (n.kind === 'temple') s.push({ x: n.x0 + 6, y: ST - 30, w: n.w - 12, h: 6, text: '福德宮', bg: '#3a5a8a', fg: '#ffd060', lit: [0, 1440] });
+      else if (n.kind === 'shop') s.push({ x: vx, y: ST - 2 * n.fh, w: 7, h: 18, text: spick(['牙科', '小吃', '冰']), vert: true, bg: spick(['#2a6fb0', '#a8322a', '#5a3a8a']), fg: '#ffffff', lit: [600, 1320] });
+      else if (n.kind === 'closed' && n.floors > 6) s.push({ x: vx, y: ST - 4 * n.fh, w: 7, h: 18, text: 'KTV', vert: true, bg: '#7a2a9a', fg: '#ffd0ff', lit: [1080, 1440] });
+    }
+    for (const sg of s) sg.spr = null;
+    return s;
+  }
+
+  // ---------- residents ----------
+  const T = (h, m) => h * 60 + m;
+  const TPL = {
+    linM: d => [[0, 'sleep'], [T(4, 52) + J(4), 'wake'], [T(5, 6), 'shop'], [T(12, 14), 'eat'], [T(12, 50), 'sleep'], [T(14, 30), 'tv'], [T(17, 20), 'idle'], [T(18, 5), 'eat'], [T(18, 40), 'tv'], [T(21, 5) + J(10), 'sleep']],
+    linW: d => [[0, 'sleep'], [T(4, 48) + J(4), 'wake'], [T(5, 2), 'shop'], [T(12, 8), 'cook'], [T(12, 32), 'eat'], [T(13, 5), 'idle'], [T(15, 30) + J(20), 'out', { side: -1 }], [T(17, 6), 'cook'], [T(18, 5), 'eat'], [T(18, 45), 'tv'], [T(21, 15) + J(10), 'sleep']],
+    ama: d => d === 5 ? [[0, 'sleep'], [T(5, 0), 'wake'], [T(5, 18), 'taichi'], [T(6, 5), 'pray'], [T(6, 25), 'cook'], [T(7, 0), 'eat'], [T(7, 30), 'water'], [T(8, 0), 'out', { side: 1 }], [T(10, 20), 'tv'], [T(12, 0), 'cook'], [T(12, 25), 'eat'], [T(13, 0), 'sleep'], [T(14, 40), 'tv'], [T(17, 0), 'cook'], [T(17, 35), 'eat'], [T(18, 10), 'pray'], [T(19, 22), 'mj'], [T(23, 50), 'sleep']]
+      : [[0, 'sleep'], [T(5, 0) + J(5), 'wake'], [T(5, 18), 'taichi'], [T(6, 5), 'pray'], [T(6, 25), 'cook'], [T(7, 0), 'eat'], [T(7, 30), 'water'], [T(8, 0), 'out', { side: 1 }], [T(10, 20), 'tv'], [T(12, 0), 'cook'], [T(12, 25), 'eat'], [T(13, 0), 'sleep'], [T(14, 40), 'tv'], [T(17, 0), 'cook'], [T(17, 35), 'eat'], [T(18, 20), 'tv'], [T(21, 0), 'pray'], [T(21, 15) + J(10), 'sleep']],
+    dad: d => d < 5 ? [[0, 'sleep'], [T(6, 40) + J(5), 'wake'], [T(6, 55), 'eat'], [T(7, 25), 'out', { side: 1, via: 'scooter' }], [T(19, 10) + J(15), 'eat'], [T(19, 50), 'tv'], [T(22, 40), 'phone'], [T(23, 20), 'sleep']]
+      : [[0, 'sleep'], [T(8, 30) + J(20), 'wake'], [T(9, 0), 'eat'], [T(9, 40), 'tv'], [T(11, 0), 'out', { side: -1, via: 'scooter' }], [T(15, 0), 'tv'], [T(18, 0), 'eat'], [T(18, 40), 'tv'], [T(23, 30), 'sleep']],
+    mom: d => d < 5 ? [[0, 'sleep'], [T(6, 15) + J(5), 'cook'], [T(6, 55), 'eat'], [T(7, 40), 'out', { side: -1 }], [T(17, 20) + J(10), 'cook'], [T(18, 10), 'eat'], [T(18, 50), 'idle'], [T(19, 30), 'tv'], [T(22, 30), 'phone'], [T(23, 0), 'sleep']]
+      : [[0, 'sleep'], [T(7, 40), 'cook'], [T(8, 20), 'laundry'], [T(8, 40), 'eat'], [T(9, 40), 'idle'], [T(10, 30), 'out', { side: 1 }], [T(16, 0), 'laundryIn'], [T(16, 20), 'cook'], [T(17, 50), 'eat'], [T(18, 40), 'tv'], [T(22, 50), 'sleep']],
+    kid: d => d < 5 ? [[0, 'sleep'], [T(6, 50), 'wake'], [T(6, 58), 'eat'], [T(7, 15), 'out', { side: 1 }], [T(16, 30) + J(10), 'desk'], [T(18, 10), 'eat'], [T(18, 50), 'tv'], [T(21, 0) + J(10), 'sleep']]
+      : [[0, 'sleep'], [T(8, 0), 'tv'], [T(8, 40), 'eat'], [T(9, 30), 'tv'], [T(10, 30), 'out', { side: 1 }], [T(16, 0), 'desk'], [T(17, 50), 'eat'], [T(18, 40), 'tv'], [T(21, 20), 'sleep']],
+    cpM: d => (d < 5 ? [[0, 'sleep'], [T(7, 20) + J(10), 'wake'], [T(7, 40), 'eat'], [T(8, 5), 'out', { side: 1, via: 'scooter' }], [T(18, 50) + J(15), 'cook'], [T(19, 35), 'eat'], [T(20, 10), 'tv'], [T(23, 0), 'phone'], [T(23, 40), 'sleep']] : [[0, 'sleep'], [T(9, 40), 'wake'], [T(10, 10), 'eat'], [T(10, 50), 'tv'], [T(13, 0), 'out', { side: -1 }], [T(18, 20), 'cook'], [T(19, 0), 'eat'], [T(19, 40), 'tv'], [T(23, 50), 'sleep']]).concat(d === 4 ? [[T(20, 40), 'out', { side: -1 }]] : []),
+    cpW: d => (d < 5 ? [[0, 'sleep'], [T(7, 10) + J(10), 'wake'], [T(7, 40), 'eat'], [T(8, 5), 'out', { side: 1 }], [T(18, 50), 'idle'], [T(19, 35), 'eat'], [T(20, 10), 'tv'], [T(22, 50), 'phone'], [T(23, 40), 'sleep']] : [[0, 'sleep'], [T(9, 50), 'wake'], [T(10, 10), 'eat'], [T(10, 40), 'yoga'], [T(11, 10), 'tv'], [T(13, 0), 'out', { side: -1 }], [T(18, 30), 'idle'], [T(19, 0), 'eat'], [T(19, 40), 'tv'], [T(23, 50), 'sleep']]).concat(d === 4 ? [[T(20, 40), 'out', { side: -1 }]] : []),
+    stu: d => [[0, 'desk'], [T(2, 40) + J(20), 'sleep'], [T(10, 30) + J(30), 'wake'], [T(10, 50), 'kettle'], [T(11, 10), 'desk'], [T(12, 30), 'out', { side: -1 }], [T(17, 40) + J(20), 'desk'], [T(20, 50), 'kettle'], [T(21, 10), 'eat'], [T(21, 35), 'desk']],
+    nurse: d => [[0, 'out', { side: 1 }], [T(7, 15), 'eat'], [T(7, 40), 'tv'], [T(8, 10), 'sleep'], [T(16, 0) + J(10), 'wake'], [T(16, 20), 'cook'], [T(17, 0), 'eat'], [T(17, 30), 'tv'], [T(20, 30), 'out', { side: 1 }]],
+    uncle: d => d === 5 ? [[0, 'sleep'], [T(6, 0), 'wake'], [T(6, 30), 'out', { side: -1 }], [T(8, 10), 'tv'], [T(12, 30), 'eat'], [T(13, 0), 'sleep'], [T(14, 20), 'tv'], [T(18, 0), 'eat'], [T(19, 15), 'mj'], [T(23, 50), 'sleep']]
+      : [[0, 'sleep'], [T(6, 0) + J(5), 'wake'], [T(6, 30), 'out', { side: -1 }], [T(8, 10), 'tv'], [T(12, 30), 'eat'], [T(13, 0), 'sleep'], [T(14, 20), 'tv'], [T(18, 0), 'eat'], [T(18, 40), 'tv'], [T(22, 30) + J(15), 'sleep']],
+    auntie: d => [[0, 'sleep'], [T(6, 10), 'wake'], [T(6, 20), 'pray'], [T(6, 40), 'cook'], [T(7, 10), 'out', { side: 1 }], [T(9, 30), 'tv'], [T(11, 40), 'cook'], [T(12, 30), 'eat'], [T(13, 0), 'sleep'], [T(14, 30), 'tv'], [T(17, 20), 'cook'], [T(18, 0), 'eat'], [T(18, 40), 'tv'], [T(22, 40) + J(10), 'sleep']],
+    dad2: d => d < 5 ? [[0, 'sleep'], [T(7, 0), 'wake'], [T(7, 15), 'eat'], [T(7, 50), 'out', { side: -1, via: 'scooter' }], [T(19, 40) + J(20), 'cook'], [T(20, 10), 'eat'], [T(20, 40), 'tv'], [T(23, 10), 'sleep']]
+      : [[0, 'sleep'], [T(9, 0), 'wake'], [T(9, 30), 'eat'], [T(10, 0), 'tv'], [T(12, 0), 'cook'], [T(12, 30), 'eat'], [T(13, 0), 'out', { side: 1 }], [T(17, 30), 'cook'], [T(18, 0), 'eat'], [T(18, 40), 'tv'], [T(23, 30), 'sleep']],
+    teen: d => d < 5 ? [[0, 'desk'], [T(0, 50) + J(20), 'phone'], [T(1, 30), 'sleep'], [T(6, 45), 'wake'], [T(7, 0), 'out', { side: 1 }], [T(17, 30) + J(20), 'desk'], [T(20, 10), 'eat'], [T(20, 40), 'desk']]
+      : [[0, 'desk'], [T(1, 40), 'phone'], [T(2, 30), 'sleep'], [T(11, 30), 'wake'], [T(12, 30), 'eat'], [T(13, 0), 'desk'], [T(15, 0), 'out', { side: -1 }], [T(18, 0), 'eat'], [T(18, 40), 'desk']],
+    old: d => d === 5 ? [[0, 'sleep'], [T(5, 30), 'wake'], [T(5, 50), 'pray'], [T(6, 10), 'cook'], [T(6, 40), 'eat'], [T(7, 10), 'cage'], [T(7, 40), 'water'], [T(8, 10), 'out', { side: 1 }], [T(11, 0), 'cage'], [T(11, 40), 'cook'], [T(12, 10), 'eat'], [T(12, 40), 'sleep'], [T(14, 30), 'cage'], [T(16, 50), 'cook'], [T(17, 20), 'eat'], [T(18, 0), 'idle'], [T(19, 22), 'mj'], [T(23, 50), 'sleep']]
+      : [[0, 'sleep'], [T(5, 30) + J(5), 'wake'], [T(5, 50), 'pray'], [T(6, 10), 'cook'], [T(6, 40), 'eat'], [T(7, 10), 'cage'], [T(7, 40), 'water'], [T(8, 10), 'out', { side: 1 }], [T(11, 0), 'cage'], [T(11, 40), 'cook'], [T(12, 10), 'eat'], [T(12, 40), 'sleep'], [T(14, 30), 'cage'], [T(16, 50), 'cook'], [T(17, 20), 'eat'], [T(18, 0), 'tv'], [T(20, 50) + J(10), 'sleep']],
+    mei: d => d < 5 ? [[0, 'desk'], [T(0, 40) + J(15), 'sleep'], [T(7, 20), 'wake'], [T(7, 30), 'yoga'], [T(7, 55), 'eat'], [T(8, 25), 'out', { side: -1 }], [T(20, 0) + J(30), 'cook'], [T(20, 40), 'eat'], [T(21, 10), 'yoga'], [T(21, 40), 'desk']]
+      : [[0, 'desk'], [T(1, 30), 'sleep'], [T(9, 30), 'wake'], [T(9, 40), 'yoga'], [T(10, 20), 'eat'], [T(11, 0), 'out', { side: 1 }], [T(19, 0), 'cook'], [T(19, 40), 'eat'], [T(20, 20), 'desk']],
+    gtr: d => d === 4 ? [[0, 'guitar'], [T(1, 10) + J(10), 'moon'], [T(1, 30), 'sleep'], [T(11, 0) + J(20), 'wake'], [T(11, 20), 'desk'], [T(12, 30), 'kettle'], [T(13, 10), 'guitar'], [T(15, 10), 'out', { side: -1 }], [T(21, 0), 'store'], [T(21, 20), 'eat'], [T(21, 50), 'out', { side: 1, via: 'taxi' }]]
+      : d === 5 ? [[0, 'out', { side: 1, via: 'taxi' }], [T(2, 40), 'guitar'], [T(3, 20), 'moon'], [T(3, 45), 'sleep'], [T(12, 20), 'wake'], [T(12, 40), 'kettle'], [T(13, 10), 'guitar'], [T(15, 0), 'out', { side: -1 }], [T(19, 10), 'store'], [T(19, 30), 'eat'], [T(20, 0), 'desk'], [T(22, 30), 'guitar']]
+      : [[0, 'guitar'], [T(1, 0) + J(15), 'moon'], [T(1, 25), 'sleep'], [T(10, 50) + J(20), 'wake'], [T(11, 10), 'desk'], [T(12, 30), 'kettle'], [T(13, 10), 'guitar'], [T(15, 15), 'out', { side: -1 }], [T(21, 30), 'store'], [T(21, 50), 'eat'], [T(22, 20), 'guitar']],
+    friend: d => d === 5 ? [[0, 'out', { side: 1 }], [T(19, 15), 'mj'], [T(23, 55), 'out', { side: 1 }]] : [[0, 'out', { side: 1 }]]
+  };
+  const RES = [
+    ['linM', '1A', { hair: '#3a3a3a', shirt: '#eeeeea', pants: '#6b6b66', shoe: '#3a6a9a' }],
+    ['linW', '1A', { hair: '#2a1d16', shirt: '#d98aa0', pants: '#33302d', long: true }],
+    ['ama', '1B', { hair: '#dcdcdc', shirt: '#8a6aa8', pants: '#2b2b33', hunch: true, h: 9 }],
+    ['dad', '2A', { shirt: '#e8e4dc', pants: '#2b3447' }], ['mom', '2A', { shirt: '#7fb3c8', long: true }], ['kid', '2A', { shirt: '#f2f2f2', pants: '#2b3447', h: 8 }],
+    ['cpM', '2B', { shirt: '#6b6f78' }], ['cpW', '2B', { shirt: '#c76b98', long: true }],
+    ['stu', '3A', { shirt: '#2f2f35', glasses: true }],
+    ['nurse', '3B', { shirt: '#5fa8a0', pants: '#5fa8a0', long: true }],
+    ['uncle', '4A', { hair: '#8a8a8a', shirt: '#eeeeea', pants: '#4a4036' }], ['auntie', '4A', { hair: '#3a2a20', shirt: '#c05a5a' }],
+    ['dad2', '4B', { shirt: '#4a7a5a' }], ['teen', '4B', { shirt: '#222226', h: 9 }],
+    ['old', '5A', { hair: '#bdbdbd', shirt: '#9a8a6a', hunch: true, h: 9 }],
+    ['mei', '5B', { shirt: '#e07a5f', long: true }],
+    ['gtr', '6A', { hair: '#4a3426', shirt: '#3d5a4a', pants: '#2b3447', beard: true }],
+    ['friend', null, { hair: '#9a9a9a', shirt: '#7a5a3a' }]
+  ];
+  let people = [], peds = [], cars = [], parts = [], mochi = null, strays = [], train = null, plane = null, birds = [], lightning = 0;
+  let rain = 0, rainT = 0, nextWx = START + 75, wind = 0, wet = 0, mist = 0;
+  let truck = null, nextTruckCheck = 0, delivery = null;
+  function makePeople() {
+    people = RES.map(([name, unit, lk], i) => ({ name, ukey: unit, unit: unit ? units[unit] : null, home: unit ? units[unit] : null, L: look(lk), tpl: TPL[name], plan: null, planDay: -1, act: null, opt: {}, zone: 'away', f: 0, x: -20, y: SW, dir: 1, route: [], pose: 'stand', walkD: 0, spd: lk.hunch ? 9 : lk.h === 8 ? 13 : 12, slot: 0, away: true, override: null, carry: null, umb: null, ph: rand() * TAU, side: 1 }));
+    const P = n => people.find(p => p.name === n);
+    for (const n of ['linM', 'dad', 'cpM', 'uncle', 'dad2']) P(n).slot = 0;
+    for (const n of ['linW', 'mom', 'cpW', 'auntie', 'teen']) P(n).slot = 1;
+    P('kid').slot = 2;
+    P('uncle').mj = 0; P('ama').mj = 1; P('old').mj = 2; P('friend').mj = 3;
+    // place everyone where their plan says they are right now, without walking
+    for (const p of people) { const a = desired(p); placeAt(p, a); }
+    mochi = { x: Bx0 + 20, y: roofY, dir: 1, st: 'sit', t: 0, tx: Bx0 + 20, zone: 'roof' };
+    strays = [{ x: bx - 3, y: SW, dir: 1, st: 'sit', t: 0, tx: bx - 3, col: '#d8a060' }, { x: store ? store.x0 + 4 : AW - 20, y: SW, dir: -1, st: 'sleep', t: 0, tx: 0, col: '#3a3a3a' }];
+  }
+  function desired(p) {
+    const m = now(), dy = dayOf(m), md = mod(m);
+    if (p.planDay !== Math.floor(m / 1440)) {
+      p.planDay = Math.floor(m / 1440);
+      p.plan = p.tpl(dy).sort((a, b) => a[0] - b[0]);
+    }
+    if (p.override) return { act: p.override.act, opt: p.override };
+    let cur = p.plan[0];
+    for (const e of p.plan) if (e[0] <= md) cur = e;
+    return { act: cur[1], opt: cur[2] || {} };
+  }
+  // where an activity happens
+  function spotFor(p, act, opt) {
+    const u = p.home, f = u ? u.f : 0;
+    const at = (it, dx, dirv, pose, extra = {}) => ({ zone: 'u', unit: u, f, x: it.x + dx, y: yF(f), dir: dirv, pose, ...extra });
+    const o = u ? u.o : 1;
+    switch (act) {
+      case 'sleep': case 'phone': if (u && u.bed) { const b = p.name === 'teen' ? u.bed : (p.name === 'dad2' ? u.bed2 : u.bed); return { zone: 'u', unit: u, f, x: b.x + Math.floor(b.w / 2), y: yF(f), pose: 'lie', bed: b, phone: act === 'phone' }; } break;
+      case 'eat': if (u && u.it.table) { const s = p.slot % 3; return s === 0 ? at(u.it.table, -2, 1, 'sit') : s === 1 ? at(u.it.table, u.it.table.w + 1, -1, 'sit') : at(u.it.table, Math.floor(u.it.table.w / 2), 1, 'sitb'); } if (u && u.it.desk) return at(u.it.desk, o > 0 ? u.it.desk.w + 2 : -3, -o, 'sit'); break;
+      case 'cook': if (u && u.it.stove) return at(u.it.stove, Math.floor(u.it.stove.w / 2), -o, 'cook'); break;
+      case 'kettle': if (u && u.it.kettle) return at(u.it.kettle, 3, -o, 'cook'); if (u && u.it.mfridge) return at(u.it.mfridge, 2, -o, 'cook'); break;
+      case 'tv': if (u && u.it.sofa) return at(u.it.sofa, 2 + (p.slot % 3) * 3, 1, 'sitf'); break;
+      case 'desk': if (u && u.it.desk) return at(u.it.desk, o > 0 ? u.it.desk.w + 2 : -3, -o, 'sit', { lamp: true }); break;
+      case 'pray': if (u && u.it.altar) return at(u.it.altar, o > 0 ? u.it.altar.w + 2 : -3, -o, 'pray'); break;
+      case 'yoga': if (u && u.it.mat) return at(u.it.mat, 3, o, 'yoga'); break;
+      case 'cage': if (u && u.it.cage) return at(u.it.cage, o > 0 ? 6 : -3, -o, 'standf'); break;
+      case 'wake': case 'idle': if (u) return { zone: 'u', unit: u, f, x: u.x0 + 8 + Math.floor(rand() * (UW - 16)), y: yF(f), pose: rand() < 0.5 ? 'standf' : 'stand', dir: rand() < 0.5 ? 1 : -1, wander: act === 'idle' }; break;
+      case 'shop': return { zone: 'shopA', f: 0, x: Ax0 + 34 + p.slot * 6, y: ST, dir: 1, pose: 'cook' };
+      case 'taichi': if (rain > 0.2) return u ? { zone: 'u', unit: u, f, x: u.x0 + 20, y: yF(f), pose: 'taichi', dir: 1 } : null; return { zone: 'roof', f: 6, x: Bx0 + 14, y: roofY, pose: 'taichi', dir: 1 };
+      case 'water': if (rain > 0.2) return { zone: 'u', unit: u, f, x: u.x0 + 26, y: yF(f), pose: 'standf' }; return { zone: 'roof', f: 6, x: Bx0 + 36 + (p.name === 'old' ? 6 : 0), y: roofY, pose: 'reach', dir: 1 };
+      case 'laundry': case 'laundryIn': return { zone: 'roof', f: 6, x: Bx0 + 24, y: roofY, pose: 'reach', dir: 1, laundry: act };
+      case 'mj': { const m4 = units['4A'], mt = m4.it.mj, s = p.mj || 0; const xs = [mt.x - 2, mt.x + mt.w + 1, mt.x + 4, mt.x + 4], ds = [1, -1, 1, 1], ps = ['sit', 'sit', 'sitf', 'sitb']; return { zone: 'u', unit: m4, f: 4, x: xs[s], y: yF(4) - (s === 2 ? 1 : 0), dir: ds[s], pose: ps[s], mj: true }; }
+      case 'guitar': if (rain > 0.15 || mod(now()) < T(18, 0) && mod(now()) > T(6, 0)) return { zone: 'u', unit: units['6A'], f: 6, x: units['6A'].x0 + 8, y: roofY, pose: 'guitar', dir: 1 }; return { zone: 'roof', f: 6, x: Bx0 + 30, y: roofY, pose: 'guitar', dir: 1 };
+      case 'moon': if (rain > 0.15) return { zone: 'u', unit: units['6A'], f: 6, x: units['6A'].x0 + 30, y: roofY, pose: 'standf' }; return { zone: 'roof', f: 6, x: Bx1 - 4, y: roofY - 3, pose: 'sitb', dir: 1 };
+      case 'store': return { zone: 'store', f: 0, x: store ? store.x0 + 26 + Math.floor(rand() * (store.w - 38)) : AW + 20, y: ST, pose: 'standf', dir: 1 };
+      case 'trash': return { zone: 'street', f: 0, x: p.override.wx, y: SW, pose: 'stand', dir: 1, carry: p.override.bag };
+      case 'eatIn': return u && u.it.desk ? at(u.it.desk, o > 0 ? u.it.desk.w + 2 : -3, -o, 'sit', { lamp: true }) : null;
+      case 'pickup': return { zone: 'street', f: 0, x: gateX + 4, y: SW, pose: 'stand', dir: 1 };
+      case 'out': return { zone: 'away', f: 0, x: opt.side < 0 ? -10 : AW + 10, y: SW, via: opt.via };
+    }
+    return u ? { zone: 'u', unit: u, f, x: u.x0 + 20, y: yF(f), pose: 'stand' } : { zone: 'away', f: 0, x: -10, y: SW };
+  }
+  function placeAt(p, d) {
+    const s = spotFor(p, d.act, d.opt); p.act = d.act; p.opt = d.opt; p.spot = s; p.route = [];
+    if (!s || s.zone === 'away') { p.zone = 'away'; p.away = true; p.x = -20; p.side = (d.opt && d.opt.side) || 1; p.lastVia = (d.opt && d.opt.via) || null; return; }
+    p.zone = s.zone; p.unit = s.unit; p.f = s.f; p.x = s.x; p.y = s.y; p.away = false; p.dir = s.dir || 1;
+  }
+  const doorX = (zone, unit, f) => zone === 'u' ? (unit.side === 'A' ? unit.x1 - 2 : unit.x0 + 2) : zone === 'shopA' ? Ax1 - 2 : zone === 'shopB' ? Bx0 + 2 : zone === 'roof' ? Bx0 + 2 : landX;
+  function route(p, dest) {
+    const r = [], push = (x, y, extra = {}) => r.push({ x, y, ...extra });
+    let z = p.zone, f = p.f;
+    if (z === 'away') {
+      const side = (dest && dest.zone === 'store') ? 1 : p.side || 1;
+      p.x = side < 0 ? -8 : AW + 8; p.y = SW; p.zone = z = 'street'; p.f = f = 0; p.away = false;
+    }
+    const dz = dest.zone, sameUnit = z === 'u' && dz === 'u' && p.unit === dest.unit;
+    if ((z === dz && f === dest.f && z !== 'u') || sameUnit) { push(dest.x, dest.y); return r; }
+    if ((z === 'street' || z === 'store') && (dz === 'street' || dz === 'away' || dz === 'store')) {
+      if (z === 'store') { push(storeDoor(), ST); push(storeDoor(), SW, { zone: 'street', chime: true }); }
+      if (dz === 'store') { push(storeDoor(), SW); push(storeDoor(), ST, { zone: 'store', chime: true }); push(dest.x, dest.y); }
+      else push(dest.x, dest.y, { zone: dz === 'away' ? 'street' : dz, vanish: dz === 'away' });
+      return r;
+    }
+    // to the stairs on this floor
+    if (z === 'store') { push(storeDoor(), ST); push(storeDoor(), SW, { zone: 'street', chime: true }); z = 'street'; }
+    if (z === 'street') { push(gateX, SW); push(gateX, ST, { zone: 'stair', f: 0 }); }
+    else if (z !== 'stair') { push(doorX(z, p.unit, f), yF(f)); }
+    push(landX, yF(f), { zone: 'stair', f });
+    while (f < dest.f) { push(midX, yF(f) - FH / 2, { stairF: f }); f++; push(landX, yF(f), { f, stairF: f }); }
+    while (f > dest.f) { push(midX, yF(f) + FH / 2, { stairF: f - 1 }); f--; push(landX, yF(f), { f, stairF: f }); }
+    if (dz === 'street' || dz === 'away' || dz === 'store') {
+      push(gateX, ST); push(gateX, SW, { zone: 'street' });
+      if (dz === 'store') { push(storeDoor(), SW); push(storeDoor(), ST, { zone: 'store', chime: true }); push(dest.x, dest.y); }
+      else push(dest.x, dest.y, { vanish: dz === 'away' });
+    } else {
+      push(doorX(dz, dest.unit, f), yF(f), { zone: dz, unit: dest.unit, f });
+      push(dest.x, dest.y);
+    }
+    return r;
+  }
+  const RIDES = ['scooter', 'taxi'];
+  function stepPerson(p, dt) {
+    const d = desired(p);
+    if (d.act !== p.act || (d.act === 'idle' && !p.route.length && !p.away && rand() < dt * 0.06)) {
+      p.act = d.act; p.opt = d.opt;
+      const s = spotFor(p, d.act, d.opt); p.spot = s;
+      if (s && s.zone === 'away') {
+        if (!p.away) {
+          p.side = d.opt.side || 1; p.leaveVia = d.opt.via || null; p.route = route(p, s);
+          const last = p.route[p.route.length - 1];
+          if (p.leaveVia === 'taxi') { last.x = gateX + 6; p.ride = spawnCar('taxi', 2, { stopX: gateX + 6, ride: p, leaving: true, wait: 0 }); if (p.ride.x > 0) p.ride.x = -50; }
+          else if (p.leaveVia === 'scooter') { const sc = parked.filter(q => q.here).sort((u, v) => Math.abs(u.x - gateX) - Math.abs(v.x - gateX)).find(q => Math.abs(q.x - gateX) > 6); if (sc) { last.x = sc.x; p.leaveScooter = sc; } else p.leaveVia = null; }
+        }
+      } else if (s) {
+        if (p.away && RIDES.includes(p.lastVia)) arriveRide(p);
+        else p.route = route(p, s);
+      }
+    }
+    if (p.waitRide) return;
+    if (p.route.length) {
+      const n = p.route[0], dx = n.x - p.x, dy = n.y - p.y, dist = Math.hypot(dx, dy), stairs = Math.abs(dy) > 0.5 && Math.abs(dx) > 0.5;
+      const step = p.spd * dt * (stairs ? 0.75 : 1);
+      if (Math.abs(dx) > 0.05) p.dir = dx > 0 ? 1 : -1;
+      if (dist <= step) {
+        p.x = n.x; p.y = n.y; p.route.shift();
+        if (n.zone) p.zone = n.zone; if (n.unit) p.unit = n.unit; if (n.f !== undefined) p.f = n.f;
+        if (n.chime) snd.ev('chime', p.x);
+        if (n.vanish) {
+          p.zone = 'away'; p.away = true; p.lastVia = p.leaveVia;
+          if (p.leaveVia === 'scooter' && p.leaveScooter) { const sc = p.leaveScooter; sc.here = false; const c = spawnCar('scooter', 2, { col: sc.col, rider: p.L, helmet: p.helmet || (p.helmet = pick(['#e8e8e8', '#c0392b', '#2f6fa0', '#3a3a3a'])), pass: null, poncho: rain > 0.25 ? '#4a8adf' : null }); c.x = sc.x; c.v = 0; c.y = LN2; snd.ev('start', c.x); }
+          if (p.leaveVia === 'taxi' && p.ride) { snd.ev('door', p.x); p.ride.pickT = 0; }
+          p.leaveVia = null;
+        }
+      } else { p.x += dx / dist * step; p.y += dy / dist * step; }
+      p.walkD += step; p.pose = 'walk';
+      if (p.zone === 'stair' || n.stairF !== undefined) { const sf = Math.round((ST - p.y) / FH); stairLit[clamp(sf, 0, 6)] = 1; }
+      return;
+    }
+    const s = p.spot;
+    if (!s || p.away) return;
+    p.pose = s.pose || 'stand'; if (s.dir) p.dir = s.dir;
+    if (s.laundry === 'laundry' && !laundryOut && rain < 0.1) { laundryOut = true; laundry = 0; }
+    if (s.laundry === 'laundryIn' && laundryOut) { laundry += dt * 0.5; if (laundry > 1) laundryOut = false; }
+    if (p.pose === 'cook' && rand() < dt * 3) parts.push({ type: 'steam', x: p.x + p.dir * 3, y: p.y - 11, vx: J(1), vy: -4, t: 0, life: 2 });
+    if (p.pose === 'pray' && rand() < dt * 2) parts.push({ type: 'smoke', x: p.x + p.dir * 3, y: p.y - 10, vx: J(0.6), vy: -3, t: 0, life: 3 });
+    if (p.pose === 'lie' && p.act === 'sleep' && dark() > 0.4 && rand() < dt * 0.25) parts.push({ type: 'z', x: p.x + 2, y: p.y - 9, vx: 1.2, vy: -2.5, t: 0, life: 3 });
+    if (p.pose === 'guitar' && snd.on && rand() < dt * 0.7) parts.push({ type: 'note', x: p.x + 4, y: p.y - 12, vx: J(2) + 1, vy: -4, t: 0, life: 2.6, col: '#f0e0a0' });
+  }
+  // brought home: a taxi stops at the gate, or their scooter pulls into a space
+  function arriveRide(p) {
+    p.waitRide = true; p.route = [];
+    if (p.lastVia === 'taxi') { p.ride = spawnCar('taxi', 2, { stopX: gateX + 6, ride: p, arriving: true, wait: 0 }); }
+    else { let sc = p.leaveScooter && !p.leaveScooter.here ? p.leaveScooter : parked.find(q => !q.here); if (!sc) { sc = { x: gateX + 24, col: '#d9d9d9', here: false }; parked.push(sc); } p.leaveScooter = sc; p.ride = spawnCar('scooter', 2, { stopX: sc.x, ride: p, arriving: true, wait: 0, col: sc.col, rider: p.L, helmet: p.helmet || '#e8e8e8', pass: null, poncho: rain > 0.25 ? '#4a8adf' : null }); }
+  }
+  // ---------- the street ----------
+  function trafficRate(m) {
+    const h = mod(m) / 60;
+    const base = h < 5 ? 0.25 : h < 6.5 ? 0.9 : h < 9 ? 5.5 : h < 16.5 ? 2.2 : h < 19.5 ? 5.5 : h < 22 ? 2.6 : 1.1;
+    return base * (1 - 0.35 * rain);
+  }
+  let carId = 1, burstT = 0;
+  function laneFree(lane) { const x = lane === 1 ? AW + 50 : -50; return !cars.some(c => c.lane === lane && c.kind !== 'scooter' && Math.abs(c.x - x) < 40); }
+  function spawnCar(kind, lane, o = {}) {
+    const dir = lane === 1 ? -1 : 1, x = dir > 0 ? -50 : AW + 50;
+    const spd = kind === 'scooter' ? 26 + rand() * 16 : kind === 'bus' ? 20 : kind === 'truck' ? 11 : 24 + rand() * 12;
+    const c = { id: carId++, kind, lane, dir, x, y: (lane === 1 ? LN1 : LN2) + (kind === 'scooter' ? Math.round(J(2)) : 0), spd, v: spd, col: o.col || (kind === 'taxi' ? '#f2c230' : kind === 'scooter' ? pick(['#d9d9d9', '#3a3a3a', '#c0392b', '#2f6fa0', '#e8c070', '#5a8a6a', '#f2f2f2', '#9a6ab0']) : pick(['#e8e8e8', '#3a3a3a', '#7a8a9a', '#a33b3b', '#2f4f7a', '#c9c3b8'])), rider: kind === 'scooter' ? look() : null, helmet: pick(['#e8e8e8', '#c0392b', '#2f6fa0', '#f2c230', '#3a3a3a', '#d98aa0']), pass: kind === 'scooter' && rand() < 0.18 ? look() : null, poncho: rain > 0.25 ? pick(['#4a8adf', '#e85a5a', '#f2c230', '#5ab07a', '#aa77dd']) : null, ...o };
+    cars.push(c); snd.car(c); return c;
+  }
+  function stepCars(dt) {
+    const m = now(), rate = trafficRate(m);
+    if (rand() < dt * rate * 0.55) { const k = rand() < 0.74 ? 'scooter' : rand() < 0.75 ? 'car' : 'taxi', ln = rand() < 0.5 ? 1 : 2; if (k === 'scooter' || laneFree(ln)) spawnCar(k, ln); }
+    if (rand() < dt * rate * 0.012) { const ln = rand() < 0.5 ? 1 : 2; if (laneFree(ln)) spawnCar('bus', ln, { col: pick(['#e8e8e8', '#3a7a5a', '#2f6fa0']) }); }
+    // waves of scooters let go by a green light somewhere off to the left
+    burstT -= dt; if (burstT < 0) { burstT = 30 + rand() * 30; if (rate > 4) { const n = 6 + Math.floor(rand() * 10); for (let i = 0; i < n; i++) { const c = spawnCar('scooter', 2); c.x = -50 - i * 9 - rand() * 6; } } }
+    for (const c of cars) {
+      // keep a gap to whatever is ahead in the lane
+      let lim = c.spd;
+      if (c.kind !== 'scooter') for (const o of cars) { if (o === c || o.lane !== c.lane || o.kind === 'scooter') continue; const ahead = (o.x - c.x) * c.dir; if (ahead > 0 && ahead < 34) lim = Math.min(lim, o.v * 0.9); }
+      if (c.stopX !== undefined && !c.done) {
+        const togo = (c.stopX - c.x) * c.dir;
+        if (!c.atStop) { if (togo <= 0.5) { c.atStop = true; c.x = c.stopX; c.v = 0; } else if (togo < 30) lim = Math.min(lim, Math.max(3, togo * 1.2)); }
+        if (c.atStop) {
+          lim = 0; c.wait += dt; const p = c.ride;
+          if (p && c.arriving) {
+            if (p.waitRide && c.wait > 1.1) {
+              p.waitRide = false; p.away = false; p.zone = 'street'; p.f = 0; p.x = c.x + (c.kind === 'taxi' ? 3 : 0); p.y = SW; p.lastVia = null; p.route = route(p, p.spot); snd.ev('door', c.x);
+              if (c.kind === 'scooter') { if (p.leaveScooter) p.leaveScooter.here = true; c.gone = true; }
+            }
+            if (!p.waitRide && c.wait > 2.6) c.done = true;
+          } else if (c.deliv) {
+            const st = people.find(q => q.name === 'stu');
+            if (st.override && st.override.act === 'pickup' && st.zone === 'street' && !st.route.length && !c.handed) { c.handed = true; c.wait = 0; st.override = null; st.food = 1; snd.ev('door', c.x); }
+            if ((c.handed && c.wait > 1.2) || c.wait > 80) { c.done = true; if (st.override && st.override.act === 'pickup') st.override = null; delivery = null; }
+          } else if (p && c.leaving) {
+            if (p.away) { c.pickT = (c.pickT || 0) + dt; if (c.pickT > 0.8) { c.done = true; c.occupied = true; } }
+            if (c.wait > 90) c.done = true;
+          }
+        }
+      }
+      c.v += (lim - c.v) * Math.min(1, dt * (lim < c.v ? 4 : 1.2));
+      c.x += c.v * c.dir * dt;
+    }
+    cars = cars.filter(c => !c.gone && c.x > -80 && c.x < AW + 80);
+    // the garbage truck, playing Für Elise
+    const md = mod(m), dy = dayOf(m);
+    if (!truck && dy !== 2 && dy !== 6 && (Math.abs(md - T(17, 35)) < 0.6 || Math.abs(md - T(21, 10)) < 0.6) && m > nextTruckCheck) {
+      nextTruckCheck = m + 30;
+      truck = spawnCar('truck', 2, { col: '#f0c419', stopX: gateX + 16, wait: 0, garbage: true });
+      truck.x = -40;
+      const rec = spawnCar('truck', 2, { col: '#e8ecee', recycle: true, stopX: gateX - 22, wait: 0 }); rec.x = -78; truck.rec = rec;
+      // one person from each home with someone awake goes down with the bag
+      const homes = {};
+      for (const p of people) { if (!p.home || p.away || p.act === 'sleep' || p.act === 'shop' || p.override || p.name === 'kid') continue; if (homes[p.home.key]) continue; homes[p.home.key] = 1; p.override = { act: 'trash', wx: gateX - 14 + Math.floor(rand() * 34), bag: pick(['#7fb0e0', '#f0a0c0', '#e8e8e8']) }; }
+    }
+    if (truck) {
+      truck.wait = truck.atStop ? truck.wait : 0;
+      const waiting = people.filter(p => p.override && p.override.act === 'trash');
+      if (truck.atStop) {
+        // they wait at the curb, then step out and throw the bag in the back
+        for (const p of waiting) { if (!p.route.length && p.zone === 'street' && !p.override.tossed) { p.override.tossed = true; p.route = [{ x: truck.x - 13 + Math.floor(rand() * 4), y: LN2 - 3 }, { x: p.override.wx, y: SW }]; p.override.tossT = 0; } if (p.override.tossed && !p.override.thrown && p.route.length === 1) { p.override.thrown = true; parts.push({ type: 'bag', x: p.x, y: p.y - 6, vx: -6, vy: -14, t: 0, life: 0.7, col: p.override.bag }); snd.ev('toss', p.x); } if (p.override.thrown && !p.route.length) p.override = null; }
+        if ((waiting.length === 0 && truck.wait > 8) || truck.wait > 55) { truck.done = true; if (truck.rec) truck.rec.done = true; }
+      }
+      if (truck.x > AW + 60 || truck.gone) { truck = null; for (const p of people) if (p.override && p.override.act === 'trash') p.override = null; }
+    }
+  }
+  function stepPeds(dt) {
+    const m = now(), md = mod(m), rate = trafficRate(m) * 0.5 + (md > T(6, 30) && md < T(22, 30) ? 0.6 : 0.1);
+    if (rand() < dt * rate * 0.35 && peds.length < 26) {
+      const dir = rand() < 0.5 ? 1 : -1, L = look({ h: rand() < 0.12 ? 8 : 10, long: rand() < 0.4, hunch: rand() < 0.08 });
+      const p = { L, dir, x: dir > 0 ? -8 : AW + 8, y: SW + (rand() < 0.5 ? 0 : 1), spd: 9 + rand() * 6, walkD: 0, umb: rain > 0.15 && rand() < 0.9 ? pick(UMB) : null, goal: null, t: 0, cup: null, carry: null };
+      const r = rand();
+      if (shopA.open > 0.9 && md < T(10, 0) && r < 0.45) p.goal = { kind: 'queue', shop: 'A', x: Ax0 + 38 + Math.floor(rand() * 8) };
+      else if (shopB.open > 0.9 && r < 0.3) p.goal = { kind: 'queue', shop: 'B', x: Bx0 + 22 + Math.floor(rand() * 10) };
+      else if (store && r < 0.55) p.goal = { kind: 'store' };
+      else if (noodle && noodleOpen(md) && r < 0.65) p.goal = { kind: 'noodle', x: noodle.x0 + 30 + Math.floor(rand() * 40) };
+      if (rand() < 0.08 && md > T(6, 0) && md < T(21, 0)) p.dog = { col: pick(['#e8e0d0', '#7a5a3a', '#3a3a3a', '#c9a070']) };
+      peds.push(p);
+    }
+    for (const p of peds) {
+      p.t += dt;
+      if (p.goal && !p.goal.done) {
+        const g = p.goal;
+        if (g.kind === 'queue' || g.kind === 'noodle') {
+          const dx = g.x - p.x;
+          if (Math.abs(dx) > 1) { p.x += Math.sign(dx) * p.spd * dt; p.walkD += p.spd * dt; p.dir = Math.sign(dx); p.pose = 'walk'; }
+          else { p.pose = g.kind === 'noodle' ? 'sit' : 'standf'; g.w = (g.w || 0) + dt; if (g.w > (g.kind === 'noodle' ? 25 : 5 + rand() * 0.1)) { g.done = true; if (g.kind === 'queue') p.cup = g.shop === 'B' ? '#e8c890' : '#f2f0e8'; } }
+          continue;
+        }
+        if (g.kind === 'store') {
+          const door = storeDoor();
+          if (!g.inside) { const dx = door - p.x; if (Math.abs(dx) > 1) { p.x += Math.sign(dx) * p.spd * dt; p.walkD += p.spd * dt; p.dir = Math.sign(dx); p.pose = 'walk'; continue; } g.inside = true; g.w = 0; p.y = ST; p.tx = store.x0 + 26 + rand() * (store.w - 38); snd.ev('chime', p.x); }
+          g.w += dt; const dx = p.tx - p.x;
+          if (Math.abs(dx) > 1) { p.x += Math.sign(dx) * p.spd * 0.6 * dt; p.walkD += p.spd * dt; p.dir = Math.sign(dx); p.pose = 'walk'; } else { p.pose = 'standf'; if (rand() < dt * 0.4) p.tx = store.x0 + 26 + rand() * (store.w - 38); }
+          if (g.w > 9 + rand() * 0.2) { p.tx = door; if (Math.abs(door - p.x) < 1.5) { g.done = true; p.y = SW; p.carry = '#f4f4f0'; snd.ev('chime', p.x); } }
+          continue;
+        }
+      }
+      p.x += p.dir * p.spd * dt; p.walkD += p.spd * dt; p.pose = 'walk';
+      if (p.dog) p.dog.fr = Math.floor(p.walkD / 2);
+    }
+    peds = peds.filter(p => p.x > -14 && p.x < AW + 14);
+  }
+  const storeDoor = () => store.x0 + 21;
+  const noodleOpen = md => (md > T(11, 0) && md < T(14, 0)) || (md > T(17, 0) && md < T(21, 30));
+
+  // ---------- weather and sky life ----------
+  function stepWeather(dt) {
+    const m = now();
+    if (m > nextWx) { const r = rand(); rainT = r < 0.42 ? 0 : r < 0.66 ? 0.2 + rand() * 0.2 : r < 0.93 ? 0.5 + rand() * 0.3 : 1; nextWx = m + 40 + rand() * 150; }
+    rain += (rainT - rain) * Math.min(1, dt * 0.12);
+    wind = rain > 0.85 ? 1 : rain * 0.3;
+    wet += ((rain > 0.08 ? 1 : 0) - wet) * dt * (rain > 0.08 ? 0.2 : 0.012);
+    mist += ((rain > 0.1 ? 0.2 : wet * 0.6) - mist) * dt * 0.05;
+    if (rain > 0.8 && rand() < dt * 0.05) { lightning = 1; snd.ev('thunder', rand() * AW); }
+    lightning = Math.max(0, lightning - dt * 3);
+    // a train on the hillside
+    if (!train && rand() < dt * 0.08) train = { x: rand() < 0.5 ? -70 : AW + 70, dir: 0, len: 64, spd: 34 };
+    if (train) { if (!train.dir) train.dir = train.x < 0 ? 1 : -1; train.x += train.dir * train.spd * dt; if (train.x < -90 || train.x > AW + 90) train = null; }
+    if (!plane && rand() < dt * 0.03) plane = { x: AW + 10, y: 18 + rand() * 30, spd: 7 };
+    if (plane) { plane.x -= plane.spd * dt; plane.y += dt * 0.6; if (plane.x < -10) plane = null; }
+    const md = mod(m);
+    if (((md > T(5, 40) && md < T(7, 0)) || (md > T(16, 50) && md < T(17, 50))) && rand() < dt * 0.08 && birds.length < 3) birds.push({ x: rand() < 0.5 ? -6 : AW + 6, y: 30 + rand() * 60, dir: 0, n: 2 + Math.floor(rand() * 4), t: 0 });
+    for (const b of birds) { if (!b.dir) b.dir = b.x < 0 ? 1 : -1; b.x += b.dir * 16 * dt; b.t += dt; }
+    birds = birds.filter(b => b.x > -20 && b.x < AW + 20);
+    for (const c of clouds) { c.x -= c.sp * dt * (1 + wind * 4); if (c.x + c.w < -10) c.x = AW + 10 + rand() * 40; }
+  }
+  const dark = () => { const a = ambient(); return 1 - (a[0] * 0.3 + a[1] * 0.55 + a[2] * 0.15) / 255; };
+  function ambient() { const a = kfc(AMB, mod(now())); return a.map(v => v * (1 - 0.22 * rain)); }
+
+  // ---------- drawing ----------
+  function R(g, x, y, w, h, c) { g.fillStyle = c; g.fillRect(x, y, w, h); }
+  function disc(g, cx0, cy0, r, c) { g.fillStyle = c; for (let yy = -r; yy <= r; yy++) { const w = Math.floor(Math.sqrt(r * r - yy * yy + r * 0.6)); g.fillRect(cx0 - w, cy0 + yy, w * 2 + 1, 1); } }
+  function blob(g, x0, y0, w, h) { for (let j = 0; j < h; j++) { const t = (j + 0.5) / h * 2 - 1, ww = Math.round(w * Math.sqrt(Math.max(0, 1 - t * t))); g.fillRect(Math.round(x0 + (w - ww) / 2), y0 + j, ww, 1); } }
+  function drawItem(g, it, u, y) {
+    const x = it.x, w = it.w, o = it.o;
+    switch (it.k) {
+      case 'fridge': R(g, x, y - 13, w, 13, '#dfe3e6'); R(g, x, y - 9, w, 1, '#b4b9bd'); R(g, x + (o > 0 ? w - 1 : 0), y - 12, 1, 2, '#8a8f93'); break;
+      case 'mfridge': R(g, x, y - 7, w, 7, '#e2e4e6'); R(g, x, y - 7, w, 1, '#c4c8cc'); break;
+      case 'stove': R(g, x, y - 8, w, 8, '#c9c4bb'); R(g, x, y - 8, w, 1, '#8f9399'); R(g, x + 1, y - 6, 3, 4, '#a9a49b'); R(g, x + 6, y - 6, 3, 4, '#a9a49b'); R(g, x + 2, y - 11, 4, 3, '#4d565f'); R(g, x + 1, y - 11, 6, 1, '#6d767f'); R(g, x + 1, y - 26, w - 2, 4, '#b0b3b6'); R(g, x + 2, y - 22, w - 4, 1, '#8f9399'); break;
+      case 'table': R(g, x, y - 6, w, 1, '#8a6a4a'); R(g, x + 1, y - 5, 1, 5, '#6a5038'); R(g, x + w - 2, y - 5, 1, 5, '#6a5038'); R(g, x - 3, y - 3, 2, 3, '#5e4632'); R(g, x + w + 1, y - 3, 2, 3, '#5e4632'); break;
+      case 'sofa': R(g, x, y - 7, w, 4, u.sofa); R(g, x, y - 3, w, 2, shade(u.sofa, 0.8)); R(g, x, y - 8, 1, 6, shade(u.sofa, 0.7)); R(g, x + w - 1, y - 8, 1, 6, shade(u.sofa, 0.7)); R(g, x + 1, y - 1, 1, 1, '#3a2a1a'); R(g, x + w - 2, y - 1, 1, 1, '#3a2a1a'); break;
+      case 'bed': case 'mattress': {
+        const head = o > 0 ? x : x + w - 1, mat = it.k === 'mattress';
+        if (!mat) { R(g, x, y - 3, w, 2, '#8a6a4a'); R(g, x, y - 1, 1, 1, '#6a5038'); R(g, x + w - 1, y - 1, 1, 1, '#6a5038'); R(g, head, y - 9, 1, 8, '#6a5038'); }
+        const top = mat ? y - 3 : y - 4;
+        R(g, x + (mat ? 0 : 1), top, w - (mat ? 0 : 2), mat ? 3 : 1, '#efebe2');
+        R(g, o > 0 ? x + 1 : x + w - 4, top - 2, 3, 2, '#f6f4ee');
+        const sl = u.sleepers.filter(s => s.bed === it);
+        const bl = o > 0 ? x + 4 : x + 1, bw = w - 5;
+        R(g, bl, top - 1, bw, 2, u.blank);
+        sl.forEach((s, i) => { const hx = (o > 0 ? x + 1 : x + w - 3) + i * o, hy = top - 3 - i; R(g, hx, hy, 2, 2, s.L.hair); R(g, hx + (o > 0 ? 1 : 0), hy + 1, 1, 1, s.L.skin); R(g, bl, top - 2 - i, bw - 1, 1, shade(u.blank, 0.92)); if (s.phone) R(g, hx + 2 * o, hy - 1, 1, 1, '#bfe8ff'); });
+        break;
+      }
+      case 'desk': R(g, x, y - 6, w, 1, '#d8d2c6'); R(g, x + 1, y - 5, 1, 5, '#a8a296'); R(g, x + w - 2, y - 5, 1, 5, '#a8a296'); R(g, x + 2, y - 9, 4, 3, '#2a2d33'); R(g, x + 3, y - 8, 2, 1, u.desk > 0.5 ? '#a8d8ff' : '#3a3e46'); R(g, x + (o > 0 ? w - 2 : 1), y - 10, 1, 4, '#5a5a5a'); R(g, x + (o > 0 ? w - 3 : 1), y - 11, 2, 1, '#e8d080'); R(g, o > 0 ? x + w + 1 : x - 3, y - 4, 2, 4, '#4a4a52'); break;
+      case 'altar': R(g, x, y - 9, w, 9, '#9b2d26'); R(g, x, y - 9, w, 1, '#c4473b'); R(g, x + 1, y - 7, w - 2, 1, '#7a201a'); R(g, x + Math.floor(w / 2) - 1, y - 14, 3, 5, '#d9b44a'); R(g, x + Math.floor(w / 2) - 1, y - 15, 3, 1, '#2a2a2a'); R(g, x + 1, y - 12, 1, 3, '#ff4a3a'); R(g, x + w - 2, y - 12, 1, 3, '#ff4a3a'); R(g, x + 2, y - 19, w - 4, 3, '#c43a2a'); break;
+      case 'shelf': R(g, x, y - 15, w, 15, '#8a6a4a'); for (let r = 0; r < 3; r++) for (let i = 0; i < w - 2; i++) if ((i + r) % 3) R(g, x + 1 + i, y - 14 + r * 5, 1, 3, ['#c0392b', '#2f6fa0', '#e8c070', '#4a7a5a', '#e8e4dc'][(i * 3 + r) % 5]); break;
+      case 'kettle': R(g, x, y - 6, w, 6, '#c9c4bb'); R(g, x, y - 6, w, 1, '#a9a49b'); R(g, x + 1, y - 9, 2, 3, '#e8e8e8'); R(g, x + 4, y - 8, 1, 2, '#c0392b'); break;
+      case 'boxes': R(g, x, y - 5, 6, 5, '#b08a5a'); R(g, x + 3, y - 9, 5, 4, '#c49a66'); R(g, x + 1, y - 3, 4, 1, '#8a6a4a'); break;
+      case 'mj': R(g, x - 1, y - 6, w + 2, 1, '#2e7d4f'); R(g, x, y - 5, w, 1, '#6a5038'); R(g, x + 1, y - 4, 1, 4, '#5e4632'); R(g, x + w - 2, y - 4, 1, 4, '#5e4632'); R(g, x - 4, y - 3, 2, 3, '#5e4632'); R(g, x + w + 2, y - 3, 2, 3, '#5e4632'); if (u.mjOn) for (let i = 0; i < w; i += 2) R(g, x + i, y - 7, 1, 1, '#f4f0e0'); break;
+      case 'cage': R(g, x + 1, y - 28, 1, 9, '#7a7a7a'); R(g, x - 1, y - 19, w + 2, 1, '#c9b06a'); R(g, x - 1, y - 14, w + 2, 1, '#c9b06a'); for (let i = -1; i <= w; i += 2) R(g, x + i, y - 18, 1, 4, '#c9b06a'); R(g, x + 1 + (Math.floor(rt * 2) % 2), y - 16 - (Math.floor(rt * 3) % 2), 1, 1, '#f2d14a'); break;
+      case 'mat': R(g, x, y - 1, w, 1, '#7fb3a0'); break;
+      case 'plant': R(g, x, y - 3, w, 3, '#a0603a'); R(g, x - 1, y - 7, w + 2, 4, '#4f7f4a'); R(g, x, y - 9, 1, 2, '#5f9f5a'); break;
+      case 'wardrobe': R(g, x, y - 18, w, 18, '#8a7a6a'); break;
+      case 'gstand': if (!u.gtrOut) { R(g, x, y - 5, 3, 4, '#b0702a'); R(g, x + 1, y - 11, 1, 6, '#5e3a1a'); R(g, x + 1, y - 4, 1, 1, '#3a2010'); } R(g, x, y - 1, 3, 1, '#333'); break;
+      case 'catbed': R(g, x, y - 2, w, 2, '#c9a0a0'); break;
+    }
+  }
+  function drawUnit(g, u) {
+    const y = yF(u.f), top = y - FH + 2, x0 = u.x0;
+    R(g, x0, top, UW, FH - 2, u.wall);
+    R(g, x0, y - 1, UW, 1, u.floor);
+    // a window in the back wall, a calendar, the ceiling lamp
+    const wx0 = x0 + (u.o > 0 ? 18 : UW - 30);
+    if (u.type !== 'addon') { R(g, wx0, top + 5, 10, 9, '#3a4458'); R(g, wx0, top + 5, 10, 1, '#8a8a8a'); R(g, wx0 + 4, top + 5, 1, 9, '#7a7a7a'); R(g, wx0 - 1, top + 4, 2, 12, shade(u.wall, 0.82)); R(g, wx0 + 9, top + 4, 2, 12, shade(u.wall, 0.82)); }
+    else { R(g, x0 + 22, top + 4, 12, 8, '#3a4458'); for (let i = 0; i < 12; i += 3) R(g, x0 + 22 + i, top + 4, 1, 8, '#6a6a6a'); R(g, x0 + 4, top + 6, 6, 8, '#d8a050'); R(g, x0 + 11, top + 7, 5, 6, '#5a7aa0'); }
+    R(g, x0 + (u.o > 0 ? 40 : 8), top + 6, 4, 5, '#f4f0e8'); R(g, x0 + (u.o > 0 ? 40 : 8), top + 6, 4, 1, '#c0392b');
+    R(g, x0 + 24, top, 8, 1, '#9a9a9a'); R(g, x0 + 25, top + 1, 6, 1, u.lamp > 0.5 ? (u.cool ? '#f4fbff' : '#fff2d8') : '#cfcfcf');
+    for (const it of u.items) drawItem(g, it, u, y);
+  }
+  function drawStairs(g) {
+    for (let f = 0; f <= 5; f++) {
+      const y = yF(f), top = y - FH + 2;
+      R(g, sx0, top, STW, FH - 2, '#c7c1b6');
+      if (f === 0) { for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) R(g, sx0 + 2 + i * 4, top + 6 + j * 4, 3, 3, '#9aa0a6'); }
+      // two flights to the next floor
+      for (let i = 0; i <= STW - 4; i++) { const sy = y - 1 - Math.floor(i * 15 / (STW - 4) / 2) * 2; R(g, sx0 + 2 + i, sy, 1, 2, '#a59e92'); }
+      for (let i = 0; i <= STW - 4; i++) { const sy = y - 16 - Math.floor(i * 15 / (STW - 4) / 2) * 2; R(g, sx1 - 2 - i, sy, 1, 2, '#b3ada2'); }
+      R(g, sx1 - 5, y - 16, 4, 1, '#958e83');
+      R(g, sx0 + 7, top + 1, 4, 1, stairLit[f] > 0.3 && dark() > 0.3 ? '#f4fbff' : '#bdbdbd');
+    }
+    // the gate onto the street
+    for (let i = 0; i < STW; i += 2) R(g, sx0 + i, ST - 22, 1, 22, 'rgba(40,44,50,0.55)');
+    R(g, sx0, ST - 22, STW, 1, '#3a3e44');
+  }
+  function drawShop(g, s, x0, kind) {
+    const y = ST, top = ST - FH + 2, op = s.open;
+    if (kind === 'A') {
+      R(g, x0, top, UW, FH - 2, '#efe6d2'); R(g, x0, y - 1, UW, 1, '#bdb2a0');
+      R(g, x0 + 4, top + 7, 22, 8, '#fff8e8'); for (let i = 0; i < 4; i++) R(g, x0 + 5, top + 8 + i * 2, 12 + (i % 2) * 6, 1, '#c0392b');
+      R(g, x0 + 2, y - 7, 6, 1, '#d9d4c8'); R(g, x0 + 4, y - 6, 1, 6, '#8a8a8a'); R(g, x0 + 12, y - 7, 6, 1, '#d9d4c8'); R(g, x0 + 14, y - 6, 1, 6, '#8a8a8a');
+      R(g, x0 + 30, y - 8, 20, 8, '#c8ccd0'); R(g, x0 + 30, y - 8, 20, 1, '#6a6f74'); R(g, x0 + 33, y - 9, 6, 1, '#d9a441'); R(g, x0 + 41, y - 9, 4, 1, '#f4f0e0');
+      R(g, x0 + 27, top + 4, 3, 14, '#e0e4e8'); R(g, x0 + 27, top + 6, 3, 1, '#ff7a5a'); R(g, x0 + 27, top + 9, 3, 1, '#7ac0ff'); R(g, x0 + 27, top + 12, 3, 1, '#f0d050');
+    } else {
+      R(g, x0, top, UW, FH - 2, '#2f4f46'); R(g, x0, y - 1, UW, 1, '#6a7a70');
+      for (let i = 0; i < 6; i++) { R(g, x0 + 6 + i * 6, top + 6, 4, 6, ['#e8c890', '#c8a0d0', '#a0d0a0', '#f0b0a0', '#d0c0a0', '#f4f0e8'][i]); R(g, x0 + 6 + i * 6, top + 6, 4, 1, '#ffffff'); }
+      if (op > 0.5) { const fr = Math.floor(rt * 3); person(g, x0 + 14, y - 1, s.st1 || (s.st1 = look({ shirt: '#2f6f5a', long: true })), (fr >> 2) % 3 ? 'standf' : 'cook', 1, fr); person(g, x0 + 31, y - 1, s.st2 || (s.st2 = look({ shirt: '#2f6f5a' })), 'cook', -1, fr + 3); }
+      R(g, x0 + 4, y - 9, 40, 9, '#d8d0c0'); R(g, x0 + 4, y - 9, 40, 1, '#8a7a6a'); R(g, x0 + 8, y - 12, 3, 3, '#e8e8e8'); R(g, x0 + 30, y - 13, 4, 4, '#9a9a9a');
+    }
+    // the rolling shutter
+    const sh = Math.round((FH - 2) * (1 - op));
+    if (sh > 0) { R(g, x0, top, UW, sh, '#9aa0a4'); for (let i = 1; i < sh; i += 2) R(g, x0, top + i, UW, 1, '#868c90'); R(g, x0, top + sh - 1, UW, 1, '#5a5f63'); }
+  }
+  function drawBuilding(g) {
+    // outer shell
+    R(g, bx, roofY, BW, ST - roofY, '#9b958c');
+    for (let f = 1; f <= 5; f++) for (const s of ['A', 'B']) drawUnit(g, units[f + s]);
+    drawShop(g, shopA, Ax0, 'A'); drawShop(g, shopB, Bx0, 'B');
+    drawStairs(g);
+    // slabs and walls, the cut edges
+    for (let f = 0; f <= 6; f++) R(g, bx, yF(f) - (f ? 0 : 0), BW, 2, '#8d877e');
+    for (let f = 1; f <= 6; f++) R(g, bx - 1, yF(f), BW + 2, 2, '#8d877e');
+    for (const xx of [bx, Ax1, sx1, Bx1]) R(g, xx, roofY, 2, ST - roofY, '#a39d93');
+    R(g, bx, roofY, 2, ST - roofY, '#8d877e'); R(g, bx + BW - 2, roofY, 2, ST - roofY, '#8d877e');
+    // ground floor pillars of the arcade
+    R(g, bx - 1, ST - FH + 2, 3, FH - 2, '#b6aea2'); R(g, bx + BW - 2, ST - FH + 2, 3, FH - 2, '#b6aea2');
+    // air conditioners hung on the side walls, dripping at night
+    for (const a of acs) { R(g, a.x, a.y, 4, 5, '#dcdcd6'); R(g, a.x, a.y + 2, 4, 1, '#bcbcb6'); }
+    // the rooftop: the add-on, the stair housing, the water tank, the deck
+    const u = units['6A'];
+    drawUnit(g, u);
+    R(g, u.x0 - 2, roofY - 28, 2, 28, '#9aa3ab'); R(g, u.x1, roofY - 28, 2, 28, '#9aa3ab');
+    R(g, u.x0 - 4, roofY - 31, UW + 8, 3, '#4f7fa0'); for (let i = 0; i < UW + 8; i += 3) R(g, u.x0 - 4 + i, roofY - 31, 1, 3, '#3f6a8a');
+    R(g, sx0 - 2, roofY - 26, STW + 4, 26, '#a39d93'); R(g, sx0 + 4, roofY - 18, 7, 18, '#6a5a4a'); R(g, sx0 - 3, roofY - 27, STW + 6, 2, '#8d877e');
+    R(g, sx0 + 1, roofY - 37, 14, 10, '#c8ccd0'); R(g, sx0 + 1, roofY - 34, 14, 1, '#a9adb2'); R(g, sx0 + 1, roofY - 30, 14, 1, '#a9adb2');
+    R(g, Bx1 - 1, roofY - 4, 3, 4, '#a39d93'); R(g, Bx0, roofY - 1, UW, 1, '#8d877e');
+    // potted plants, the laundry line, a plastic chair
+    R(g, Bx0 + 34, roofY - 4, 4, 4, '#a0603a'); R(g, Bx0 + 33, roofY - 9, 6, 5, '#4f7f4a'); R(g, Bx0 + 41, roofY - 3, 3, 3, '#a0603a'); R(g, Bx0 + 40, roofY - 7, 5, 4, '#5f8f4a');
+    R(g, Bx0 + 10, roofY - 18, 1, 18, '#7a7a7a'); R(g, Bx0 + 46, roofY - 18, 1, 18, '#7a7a7a'); R(g, Bx0 + 10, roofY - 18, 37, 1, '#9a9a9a');
+    if (laundryOut) { const k = laundryOut ? 1 : 0; void k; ['#e8e4dc', '#7fb3c8', '#f2f2f2', '#c76b98', '#2b3447', '#d9a441', '#e8e4dc'].forEach((c, i) => { const sw = Math.round(Math.sin(rt * 2 + i) * wind * 2); R(g, Bx0 + 12 + i * 5 + sw, roofY - 17, 4, 5 + (i % 2), c); }); }
+    R(g, Bx0 + 28, roofY - 4, 5, 1, '#e0e0e0'); R(g, Bx0 + 28, roofY - 3, 1, 3, '#e0e0e0'); R(g, Bx0 + 32, roofY - 3, 1, 3, '#e0e0e0'); R(g, Bx0 + 32, roofY - 7, 1, 3, '#e0e0e0');
+  }
+  function drawNbsDynamic(g, md) {
+    for (const n of nbs) {
+      for (const wi of n.wins) {
+        if (wi.cramWin) continue;
+        const lit = wi.lit;
+        R(g, wi.x, wi.y, wi.w, wi.h, lit ? (wi.warm ? '#ffe6b8' : '#e6f2ff') : '#39424f');
+        if (lit) { R(g, wi.x, wi.y, 2, wi.h, wi.cur); R(g, wi.x + wi.w - 2, wi.y, 2, wi.h, wi.cur); if (wi.sil && wi.silOn) { const sx = wi.x + 3 + Math.floor((Math.sin(rt * 0.3 + wi.x) * 0.5 + 0.5) * (wi.w - 6)); R(g, sx, wi.y + 4, 3, 8, 'rgba(40,40,50,0.55)'); R(g, sx, wi.y + 2, 3, 2, 'rgba(40,40,50,0.55)'); } }
+        else { R(g, wi.x + 1, wi.y + 1, 2, 2, 'rgba(255,255,255,0.08)'); }
+        if (wi.cage) for (let i = 0; i < wi.w + 2; i += 3) R(g, wi.x - 1 + i, wi.y - 1, 1, wi.h + 2, 'rgba(70,74,80,0.7)');
+      }
+      // shops on the ground floor
+      drawNbShop(g, n, md);
+      if (n.kind === 'store') drawStore(g, n);
+      if (n.kind === 'cram') drawCram(g, n, md);
+    }
+  }
+  const NBH = { pharm: [540, 1320], repair: [540, 1200], lottery: [600, 1380], shop: [660, 1290], betel: [960, 1440] };
+  const nbOpen = (n, md) => { const h = NBH[n.kind]; return !!h && md >= h[0] && md < h[1]; };
+  function drawNbShop(g, n, md) {
+    if (n.kind === 'store' || n.kind === 'cram' || n.kind === 'temple') return;
+    const x0 = n.x0 + 2, w = n.w - 4, top = ST - n.fh + 9, h = ST - top;
+    if (!nbOpen(n, md)) {
+      R(g, x0, top, w, h, '#8f959a'); for (let y = top + 1; y < ST; y += 2) R(g, x0, y, w, 1, '#80868b'); R(g, x0, ST - 1, w, 1, '#5a5f63');
+      if (n.graf) { R(g, x0 + 6, ST - 9, 9, 3, '#c85a8a'); R(g, x0 + 9, ST - 11, 3, 7, '#c85a8a'); R(g, x0 + 18, ST - 8, 6, 2, '#5aa0d8'); }
+      return;
+    }
+    const pp = n.ppl || (n.ppl = [look(), look(), look({ long: true })]), fr = Math.floor(rt * 4);
+    if (n.kind === 'pharm') {
+      R(g, x0, top, w, h, '#eef4f0'); for (let r = 0; r < 3; r++) for (let i = 4; i < w - 18; i += 2) R(g, x0 + i, top + 3 + r * 5, 1, 2, ['#5ab07a', '#e85a5a', '#f2f2f2', '#4a8adf'][(i + r) % 4]);
+      R(g, x0 + w - 16, ST - 7, 12, 7, '#d8e0dc'); person(g, x0 + w - 10, ST - 2, pp[0], 'standf', 1, fr); R(g, x0 + w - 16, ST - 5, 12, 5, '#d8e0dc');
+    } else if (n.kind === 'repair') {
+      R(g, x0, top, w, h, '#6a6a70'); for (let i = 3; i < w - 3; i += 5) R(g, x0 + i, top + 3, 2, 5, ['#c0c0c0', '#e8c040', '#a33b3b'][i % 3]);
+      scooter(g, x0 + 10, ST, '#c0392b', 1, null, null); scooter(g, x0 + 24, ST, '#d9d9d9', -1, null, null); person(g, x0 + 16, ST, pp[0], 'sitf', 1, fr);
+      if (rand() < 0.02) parts.push({ type: 'steam', x: x0 + 18, y: ST - 6, vx: 2, vy: -6, t: 0, life: 0.4 });
+    } else if (n.kind === 'lottery') {
+      R(g, x0, top, w, h, '#b8322a'); R(g, x0 + 3, top + 3, w - 6, 4, '#ffd060'); R(g, x0 + 4, ST - 7, w - 8, 7, '#8a2420'); person(g, x0 + 10, ST, pp[0], 'stand', 1, fr); person(g, x0 + 20, ST, pp[1], 'stand', -1, fr);
+    } else if (n.kind === 'shop') {
+      R(g, x0, top, w, h, '#efe2c8'); R(g, x0 + 3, top + 3, 12, 6, '#fff8e8'); for (let i = 0; i < 3; i++) R(g, x0 + 4, top + 4 + i * 2, 9, 1, '#a8322a');
+      for (let i = 0; i < 2; i++) { const tx = x0 + 18 + i * 14; if (tx + 8 > x0 + w) break; R(g, tx, ST - 6, 8, 1, '#a0603a'); R(g, tx + 1, ST - 5, 1, 5, '#6a4a2a'); R(g, tx + 6, ST - 5, 1, 5, '#6a4a2a'); person(g, tx - 1, ST, pp[i], 'sit', 1, fr); }
+    } else if (n.kind === 'betel') {
+      R(g, x0, top, w, h, '#f0dcc0'); R(g, x0 + 2, top + 2, w - 4, 10, '#fff4e0'); for (let i = 0; i < Math.floor((w - 8) / 5); i++) { R(g, x0 + 5 + i * 5, top + 3, 1, 2, '#7a7a7a'); R(g, x0 + 4 + i * 5, top + 5, 3, 5, i % 2 ? '#b8541a' : '#a8441a'); }
+      R(g, x0 + 2, ST - 7, w - 4, 7, '#c8ccd0'); person(g, x0 + w / 2, ST - 2, pp[0], 'cook', 1, fr); R(g, x0 + 2, ST - 5, w - 4, 5, '#c8ccd0');
+    }
+  }
+  function drawStore(g, n) {
+    const x0 = n.x0 + 2, w = n.w - 4, top = ST - n.fh + 9;
+    R(g, x0, top, w, ST - top, '#f4f6f4');
+    R(g, x0, ST - 1, w, 1, '#c8ccc8');
+    for (let r = 0; r < 3; r++) for (let i = 22; i < w - 10; i += 2) R(g, x0 + i, top + 4 + r * 5, 1, 2, ['#e85a5a', '#4a8adf', '#f2c230', '#5ab07a', '#f0f0f0', '#e88a3a'][(i + r * 2) % 6]);
+    for (let i = 22; i < w - 10; i += 12) R(g, x0 + i, top + 3, 9, 15, 'rgba(160,170,180,0.25)');
+    R(g, x0 + w - 8, top + 2, 6, 17, '#cfe8f4'); for (let i = 0; i < 4; i++) R(g, x0 + w - 7, top + 4 + i * 4, 4, 2, ['#e85a5a', '#f2c230', '#4a8adf', '#5ab07a'][i]);
+    R(g, x0 + 2, ST - 8, 14, 8, '#d8d0c0'); R(g, x0 + 2, ST - 8, 14, 1, '#8a7a6a');
+    // the clerk
+    person(g, x0 + 9, ST - 3, n.clerk || (n.clerk = look({ shirt: '#3a8a5a' })), 'standf', 1, 0);
+    R(g, x0 + 2, ST - 6, 14, 3, '#d8d0c0');
+    R(g, x0 + 18, top, 1, ST - top, '#b8c0c0'); R(g, x0 + w - 1, top, 1, ST - top, '#b8c0c0');
+  }
+  function drawCram(g, n, md) {
+    const y = ST - 2 * n.fh - 19, x0 = n.x0 + 6, w = n.w - 22, on = cramOn(md);
+    R(g, x0, y, w, 13, on ? '#f6fbff' : '#39424f');
+    if (on) {
+      R(g, x0 + 2, y + 2, 14, 6, '#ffffff'); R(g, x0 + 2, y + 2, 14, 1, '#9aa0a6');
+      for (let i = 0; i < 3; i++) R(g, x0 + 4 + i * 4, y + 4, 2, 1, '#3a5aa0');
+      const tx = x0 + 6 + Math.round((Math.sin(rt * 0.4) * 0.5 + 0.5) * 8); R(g, tx, y + 4, 2, 2, '#2a1d16'); R(g, tx, y + 6, 2, 5, '#7a5a8a');
+      for (let r = 0; r < 2; r++) for (let i = 0; i < 6; i++) { const kx = x0 + 22 + i * 6 + r * 2; if (kx > x0 + w - 3) continue; R(g, kx, y + 6 + r * 3 - ((Math.floor(rt * 1.3 + i * 7 + r) % 9) === 0 ? 1 : 0), 2, 2, i % 3 ? '#1a1512' : '#2e221a'); R(g, kx, y + 8 + r * 3, 2, 2, '#f2f2f2'); }
+    }
+    for (let i = 0; i < w; i += 6) R(g, x0 + i, y, 1, 13, 'rgba(90,96,104,0.8)');
+    // the noodle shop below
+    const ny = ST - n.fh + 9, nx = n.x0 + 4, open = noodleOpen(md);
+    R(g, nx, ny, n.w - 8, ST - ny, open ? '#e8dcc4' : '#2a2a30');
+    if (open) { R(g, nx + n.w - 22, ST - 9, 10, 9, '#9aa0a6'); R(g, nx + n.w - 21, ST - 12, 8, 3, '#c8ccd0'); if (rand() < 0.5) parts.push({ type: 'steam', x: nx + n.w - 17 + J(3), y: ST - 13, vx: J(1), vy: -5, t: 0, life: 1.8 }); person(g, nx + n.w - 26, ST - 1, n.cook || (n.cook = look({ shirt: '#f2f2f2', hair: '#2a2a2a' })), 'cook', 1, Math.floor(rt * 4)); for (let i = 0; i < 3; i++) { R(g, nx + 6 + i * 14, ST - 6, 8, 1, '#a0603a'); R(g, nx + 7 + i * 14, ST - 5, 1, 5, '#6a4a2a'); R(g, nx + 12 + i * 14, ST - 5, 1, 5, '#6a4a2a'); } }
+  }
+  const cramOn = md => { const d = dayOf(now()); return (d < 5 && md > T(17, 30) && md < T(21, 30)) || (d === 5 && md > T(9, 0) && md < T(12, 0)); };
+  function drawStreet(g, md) {
+    // the arcade floor, the curb, the road
+    R(g, 0, ST, AW, 7, '#b3aca0'); for (let i = 0; i < AW; i += 6) R(g, i, ST, 1, 7, '#a59e92');
+    R(g, 0, ST + 7, AW, 1, '#d8d2c6');
+    const road = mixc(hex('#55585e'), hex('#34373d'), wet);
+    R(g, 0, ST + 8, AW, AH - ST - 8, css(road));
+    for (let i = (Math.floor(-rt * 0) % 16); i < AW; i += 16) R(g, i, LN1 + 4, 8, 1, '#c9c3b0');
+    R(g, 0, AH - 3, AW, 1, '#d8d2c6');
+    // puddles hold the lights when it's wet
+    if (wet > 0.2) { g.fillStyle = css(mixc(road, [20, 22, 30], 0.4), wet * 0.7); for (const pu of [[bx - 40, LN1 + 7, 22], [bx + 40, LN2 + 4, 30], [bx + 150, LN1 + 6, 18], [bx - 120, LN2 + 5, 26]]) g.fillRect(pu[0], pu[1], pu[2], 2); }
+    // street lamps
+    for (const l of lamps) { R(g, l.x, ST - 40, 1, 48, '#5a5f66'); R(g, l.x, ST - 40, 6, 1, '#5a5f66'); R(g, l.x + 5, ST - 39, 3, 1, lampOn(md) ? '#fff6dc' : '#9aa0a6'); }
+  }
+  function drawCurb(g) {
+    if (mod(now()) > T(6, 0) && mod(now()) < T(6, 50) && shopA.open > 0.5) { R(g, Ax0 + 6, ST + 5, 3, 1, '#e8e4dc'); R(g, Ax0 + 12, ST + 5, 3, 1, '#e8e4dc'); }
+    for (const s of parked) if (s.here) scooter(g, s.x, ST + 7, s.col, 1, null, null);
+    for (const c of strays) cat(g, c.x, c.y + 3, c.col, c.st === 'walk' ? 'walk' : c.st, c.dir, Math.floor(c.t * 4));
+  }
+  const lampOn = md => md > T(17, 25) || md < T(6, 5);
+  function scooter(g, X, Y, col, dir, rider, o) {
+    const x = Math.round(X), y = Math.round(Y), d = dir;
+    const r = (dx, dy, w, h, c) => { g.fillStyle = c; g.fillRect(x + (d > 0 ? dx : -dx - w + 1), y + dy, w, h); };
+    r(-4, -2, 2, 2, '#1a1a1a'); r(3, -2, 2, 2, '#1a1a1a');
+    r(-4, -4, 8, 2, col); r(-3, -5, 4, 1, '#2a2a2a'); r(3, -7, 2, 4, col); r(4, -8, 1, 1, '#3a3a3a');
+    r(5, -6, 1, 1, '#fff2c0'); r(-5, -4, 1, 1, '#d02020');
+    if (rider) {
+      const L = rider;
+      if (o && o.pass) { person(g, x - 3 * d, y - 3, o.pass, 'sit', d, 0, { helmet: o.helmet2 || '#e8e8e8' }); }
+      person(g, x - 0 * d, y - 3, L, 'sit', d, 0, { helmet: o && o.helmet });
+      if (o && o.poncho) { r(-3, -10, 6, 5, o.poncho); }
+      if (o && o.box) { r(-6, -9, 4, 4, o.box); }
+    }
+  }
+  function car(g, c) {
+    const x = Math.round(c.x), y = Math.round(c.y), d = c.dir;
+    const r = (dx, dy, w, h, col) => { g.fillStyle = col; g.fillRect(x + (d > 0 ? dx : -dx - w + 1), y + dy, w, h); };
+    if (c.kind === 'scooter') { scooter(g, x, y, c.col, d, c.rider, { helmet: c.helmet, pass: c.pass, poncho: c.poncho, box: c.box }); return; }
+    if (c.kind === 'bus') {
+      r(-20, -14, 40, 12, c.col); r(-20, -3, 40, 1, '#3a3a3a'); r(-18, -12, 34, 5, '#2a3440'); for (let i = 0; i < 6; i++) if ((i + c.id) % 3) r(-16 + i * 6, -11, 2, 2, '#1a1512');
+      r(18, -13, 2, 3, '#ff9a3a'); r(-15, -2, 4, 2, '#1a1a1a'); r(11, -2, 4, 2, '#1a1a1a'); r(19, -6, 1, 2, '#fff2c0'); r(-20, -6, 1, 2, '#d02020'); return;
+    }
+    if (c.kind === 'truck') {
+      if (c.recycle) { r(-12, -10, 18, 9, '#e8ecee'); for (let i = 0; i < 18; i += 3) r(-12 + i, -10, 1, 9, '#9aa0a6'); r(6, -9, 6, 8, '#e8ecee'); r(8, -8, 3, 3, '#2a3440'); }
+      else { r(-14, -11, 20, 10, c.col); r(-14, -7, 20, 1, '#3a8a5a'); r(-15, -11, 2, 10, '#c8a010'); r(6, -9, 7, 8, '#f4f4f0'); r(8, -8, 4, 3, '#2a3440'); r(9, -10, 2, 1, '#ff9a3a'); }
+      r(-11, -2, 3, 2, '#1a1a1a'); r(7, -2, 3, 2, '#1a1a1a'); r(12, -4, 1, 1, '#fff2c0'); return;
+    }
+    r(-8, -5, 17, 4, c.col); r(-5, -8, 10, 3, c.col); r(-4, -7, 4, 2, '#2a3440'); r(1, -7, 3, 2, '#2a3440');
+    if (c.kind === 'taxi') { r(-1, -9, 3, 1, '#f4f4f0'); r(-8, -3, 17, 1, '#1a1a1a'); if (c.ride && c.arriving === false) {} }
+    r(-6, -2, 3, 2, '#1a1a1a'); r(4, -2, 3, 2, '#1a1a1a'); r(8, -4, 1, 1, '#fff2c0'); r(-8, -4, 1, 1, '#d02020');
+  }
+
+  // ---------- the light: rooms, lamps, signs ----------
+  const GLOW = {};
+  function glowSpr(rgb) {
+    if (GLOW[rgb]) return GLOW[rgb];
+    const [c, g] = mkC(); c.width = c.height = 32; const r = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+    r.addColorStop(0, `rgba(${rgb},1)`); r.addColorStop(0.35, `rgba(${rgb},0.45)`); r.addColorStop(1, `rgba(${rgb},0)`); g.fillStyle = r; g.fillRect(0, 0, 32, 32); return (GLOW[rgb] = c);
+  }
+  const gl = (g, x, y, r, rgb, a) => { if (a <= 0.01) return; g.globalAlpha = Math.min(1, a); g.drawImage(glowSpr(rgb), x - r, y - r, r * 2, r * 2); };
+  function lights(md, dk) {
+    const g = lx, a = ambient();
+    g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1; g.fillStyle = css(a); g.fillRect(0, 0, AW, AH);
+    if (lightning > 0) { g.globalAlpha = lightning * 0.8; g.fillStyle = '#ffffff'; g.fillRect(0, 0, AW, AH); g.globalAlpha = 1; }
+    const rect = (x, y, w, h, c, al) => { if (al <= 0.01) return; g.globalAlpha = al; g.fillStyle = c; g.fillRect(x, y, w, h); };
+    for (const k in units) { const u = units[k]; const y = yF(u.f), top = y - FH + 2; rect(u.x0, top, UW, FH - 2, u.cool ? '#eef6ff' : '#ffe8c6', u.lamp * dk); }
+    for (let f = 0; f <= 5; f++) rect(sx0, yF(f) - FH + 2, STW, FH - 2, '#e8f2ff', stairLit[f] * dk * 0.9);
+    rect(Ax0, ST - FH + 2, UW, FH, '#fff0d8', shopA.open * dk); rect(Bx0, ST - FH + 2, UW, FH, '#f4fff8', shopB.open * dk);
+    for (const n of nbs) {
+      for (const wi of n.wins) if (wi.lit) rect(wi.x, wi.y, wi.w, wi.h, wi.warm ? '#fff0d8' : '#eef6ff', dk);
+      if (n.kind === 'store') rect(n.x0, ST - n.fh + 8, n.w, n.fh - 8, '#ffffff', dk);
+      if (n.kind === 'cram') { if (cramOn(md)) rect(n.x0 + 6, ST - 2 * n.fh - 19, n.w - 22, 13, '#ffffff', dk); if (noodleOpen(md)) rect(n.x0 + 4, ST - n.fh + 9, n.w - 8, n.fh - 9, '#ffe8c8', dk); }
+      if (n.kind === 'temple') rect(n.x0, ST - 26, n.w, 26, '#ff9a7a', dk * 0.7);
+      if (nbOpen(n, md)) rect(n.x0 + 2, ST - n.fh + 9, n.w - 4, n.fh - 9, n.kind === 'pharm' ? '#f4fff8' : n.kind === 'lottery' ? '#ffd0c0' : '#ffeacc', dk);
+    }
+    g.globalCompositeOperation = 'lighter';
+    for (const k in units) { const u = units[k], y = yF(u.f); if (u.tv > 0) gl(g, (u.it.sofa ? u.it.sofa.x + u.it.sofa.w / 2 : u.x0 + 26), y - 6, 16, '90,120,255', u.tv * dk * (0.55 + 0.35 * Math.sin(rt * 7 + u.f) * Math.sin(rt * 3.1))); if (u.desk > 0 && u.desk && u.items) { const d = u.items.find(i => i.k === 'desk'); if (d) gl(g, d.x + d.w / 2, y - 9, 12, '255,220,160', u.desk * dk * 0.9); } if (u.red > 0) { const al = u.items.find(i => i.k === 'altar'); if (al) gl(g, al.x + al.w / 2, y - 12, 10, '255,60,40', dk * 0.8); } for (const s of u.sleepers) if (s.phone) gl(g, (s.bed ? s.bed.x + 3 : u.x0 + 10), y - 7, 7, '150,200,255', dk * 0.8); }
+    if (lampOn(md)) for (const l of lamps) { if (l.flick && Math.sin(rt * 23) * Math.sin(rt * 7.3) > 0.7) continue; gl(g, l.x + 6, ST - 30, 34, '255,232,190', 0.85 * dk); gl(g, l.x + 6, ST + 10, 30, '255,232,190', 0.5 * dk); }
+    for (const c of cars) { const front = c.x + c.dir * (c.kind === 'bus' ? 20 : c.kind === 'scooter' ? 6 : 9); gl(g, front + c.dir * 12, c.y - 4, 14, '255,240,200', 0.7 * dk); gl(g, c.x - c.dir * 8, c.y - 4, 5, '255,40,30', 0.6 * dk); }
+    for (const sg of signs) if (signLit(sg, md)) gl(g, sg.x + sg.w / 2, sg.y + sg.h / 2, Math.max(sg.w, sg.h) * 0.9, hex(sg.bg).join(','), 0.5 * dk);
+    g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
+  }
+  const signLit = (sg, md) => sg.lit[0] <= sg.lit[1] ? md >= sg.lit[0] && md <= sg.lit[1] : md >= sg.lit[0] || md <= sg.lit[1];
+
+  function drawSky(g, md, dk0) {
+    const dk = sm(0.12, 0.68, dk0);
+    let top = kfc(SKYT, md), bot = kfc(SKYB, md);
+    const grey = mixc(hex('#7d858e'), hex('#141820'), dk);
+    top = mixc(top, grey, rain * 0.75); bot = mixc(bot, mixc(grey, hex('#3a3440'), dk * 0.6), rain * 0.65);
+    const gr = g.createLinearGradient(0, 0, 0, ST); gr.addColorStop(0, css(top)); gr.addColorStop(1, css(bot)); g.fillStyle = gr; g.fillRect(0, 0, AW, ST + 2);
+    // stars, only on clear nights; the city keeps most of them
+    const clear = (1 - rain * 1.6) * sm(0.45, 0.8, dk);
+    if (clear > 0.02) for (const s of stars) { const a = clear * s.b * (0.55 + 0.45 * Math.sin(rt * 1.3 + s.p)); g.fillStyle = `rgba(255,250,235,${a.toFixed(3)})`; g.fillRect(s.x, s.y, 1, 1); }
+    // the moon crosses the night
+    if (md > T(17, 30) || md < T(5, 30)) {
+      const u = ((md - T(17, 30) + 1440) % 1440) / (12 * 60), mx = Math.round(AW * (0.12 + 0.76 * u)), my = Math.round(26 + 40 * Math.pow(2 * u - 1, 2) + (port ? 20 : 0));
+      const ma = sm(0, 0.06, u) * (1 - sm(0.94, 1, u)) * (1 - rain * 0.85);
+      if (ma > 0.02) { g.globalCompositeOperation = 'lighter'; gl(g, mx, my, 26, '200,210,255', 0.35 * ma); g.globalCompositeOperation = 'source-over'; g.globalAlpha = ma; for (let yy = -5; yy <= 5; yy++) for (let xx = -5; xx <= 5; xx++) { const r2 = xx * xx + yy * yy; if (r2 > 27) continue; const lit = (xx + 2) * (xx + 2) + yy * yy < 27 + 6; g.fillStyle = lit ? ((xx * 3 + yy * 5) % 7 === 0 ? '#e0dcc8' : '#f6f2e0') : '#3a3c50'; g.fillRect(mx + xx, my + yy, 1, 1); } g.globalAlpha = 1; }
+    }
+    // the sun going down behind the hills
+    if (md > T(16, 20) && md < T(17, 25) && rain < 0.5) { const u = (md - T(16, 20)) / 65, sx = Math.round(AW * 0.82), sy = Math.round(lerp(ST - 250, ST - 205, u)); g.globalCompositeOperation = 'lighter'; gl(g, sx, sy, 40, '255,170,90', 0.6 * (1 - u * 0.5)); g.globalCompositeOperation = 'source-over'; disc(g, sx, sy, 6, '#ffd890'); }
+    if (md > T(5, 50) && md < T(6, 50) && rain < 0.5) { const u = (md - T(5, 50)) / 60, sx = Math.round(AW * 0.2), sy = Math.round(lerp(ST - 205, ST - 250, u)); g.globalCompositeOperation = 'lighter'; gl(g, sx, sy, 40, '255,180,110', 0.55); g.globalCompositeOperation = 'source-over'; disc(g, sx, sy, 6, '#ffe0a0'); }
+    // clouds
+    const cc = mixc(mixc(hex('#f4f4f6'), hex('#2a2e44'), dk), hex('#8a8e96'), rain * 0.6), ccl = md > T(16, 40) && md < T(17, 40) ? mixc(cc, hex('#f2a07a'), 0.5) : cc;
+    const nc = Math.round(4 + rain * 5);
+    for (let i = 0; i < Math.min(nc, clouds.length); i++) { const c = clouds[i]; g.fillStyle = css(ccl, 0.75 + rain * 0.2); for (const [bx0, by, br] of c.blobs) blob(g, Math.round(c.x + bx0), Math.round(c.y + by), br * 2 + 4, Math.ceil(br * 0.9)); }
+    if (plane) { const bl = Math.floor(rt * 2) % 2; g.fillStyle = bl ? '#ff3a3a' : '#ffffff'; g.fillRect(Math.round(plane.x), Math.round(plane.y), 1, 1); g.fillStyle = 'rgba(200,200,210,0.6)'; g.fillRect(Math.round(plane.x) + 1, Math.round(plane.y), 2, 1); }
+    for (const b of birds) for (let i = 0; i < b.n; i++) { const wing = Math.floor(b.t * 6 + i) % 2; g.fillStyle = dk > 0.6 ? '#20242c' : '#f4f4f0'; const xx = Math.round(b.x - b.dir * i * 4), yy = Math.round(b.y + Math.abs(i - b.n / 2) * 2); g.fillRect(xx - 1, yy - wing, 1, 1); g.fillRect(xx, yy, 1, 1); g.fillRect(xx + 1, yy - wing, 1, 1); }
+    // the hills of Xizhi, a train along them, the mist that stays after rain
+    const hcol = [mixc(mixc(hex('#7a95a4'), hex('#1d2442'), dk), hex('#8a9098'), rain * 0.4), mixc(mixc(hex('#5f7f6a'), hex('#151a2e'), dk), hex('#7a8088'), rain * 0.35)];
+    for (let l = 0; l < 2; l++) { g.fillStyle = css(hcol[l]); for (let i = 0; i < AW; i++) g.fillRect(i, hills[l][i], 1, ST - hills[l][i]); }
+    if (train) { const ty = Math.round(hills[1][clamp(Math.round(train.x), 0, AW - 1)] + 9); for (let i = 0; i < train.len; i++) { const xx = Math.round(train.x - train.dir * i); if (xx < 0 || xx >= AW) continue; const yy = hills[1][xx] + 9; g.fillStyle = i % 16 === 0 ? '#2a2e38' : css(mixc(hex('#dfe6ec'), hex('#5a6070'), dk)); g.fillRect(xx, yy, 1, 4); if (dk > 0.4 && i % 4 === 1 && i % 16) { g.fillStyle = '#fff2c8'; g.fillRect(xx, yy + 1, 1, 1); } } void ty; }
+    if (mist > 0.02) { for (let i = 0; i < 4; i++) { g.fillStyle = css(mixc(hex('#e6eaee'), hex('#4a5068'), dk), mist * 0.35); const yy = Math.round(hills[1][0] + 6 + i * 7 + Math.sin(rt * 0.05 + i) * 3); g.fillRect(0, yy, AW, 4); } }
+    // city glow on low clouds at night
+    if (dk > 0.4) { const cg = g.createLinearGradient(0, ST - 260, 0, ST - 120); cg.addColorStop(0, 'rgba(255,150,120,0)'); cg.addColorStop(1, `rgba(255,150,120,${(0.08 * dk * (0.5 + rain)).toFixed(3)})`); g.fillStyle = cg; g.fillRect(0, ST - 260, AW, 140); }
+  }
+  function drawRain(g, dk) {
+    if (rain < 0.03) return;
+    const n = Math.floor(rain * (AW * AH) / 260), sl = wind * 3 + 0.6;
+    g.fillStyle = css(mixc(hex('#c8d4e0'), hex('#8a9ab8'), dk), 0.35 + rain * 0.25);
+    for (let i = 0; i < n; i++) { const x = (i * 97.13 + rt * 37 * sl + Math.sin(i) * 500) % (AW + 20) - 10, y = (i * 53.7 + rt * 260 + (i % 7) * 31) % (AH + 10) - 5; g.fillRect(Math.round(x), Math.round(y), 1, 3); if (sl > 1.5) g.fillRect(Math.round(x) - 1, Math.round(y) + 3, 1, 1); }
+    g.fillStyle = css(mixc(hex('#e8eef4'), hex('#a8b4c8'), dk), 0.5 * rain);
+    for (let i = 0; i < n * 0.25; i++) { const x = Math.floor(rand() * AW), y = ST + 8 + Math.floor(rand() * (AH - ST - 8)); g.fillRect(x, y, 1, 1); }
+  }
+
+  // ---------- frame ----------
+  function update(dt) {
+    rt += dt;
+    const m = now(), md = mod(m), dk = dark();
+    stepWeather(dt);
+    shopA.open += (((md > T(5, 25) && md < T(12, 5)) && people.some(p => p.zone === 'shopA') ? 1 : 0) - shopA.open) * Math.min(1, dt * 0.6);
+    shopB.open += ((md > T(10, 0) && md < T(22, 0) ? 1 : 0) - shopB.open) * Math.min(1, dt * 0.6);
+    for (const p of people) stepPerson(p, dt);
+    stepCars(dt); stepPeds(dt);
+    // rooms light up when their people are home and awake
+    { const st = people.find(q => q.name === 'stu'), day = Math.floor(m / 1440);
+      if (!delivery && st.food === undefined) st.food = 0;
+      if (!delivery && st.delivDay !== day && (md > T(21, 45) || md < T(0, 40)) && st.act === 'desk' && !st.route.length && !st.away && rand() < dt * 0.006) { st.delivDay = day; delivery = spawnCar('scooter', 2, { stopX: gateX - 10, deliv: true, wait: 0, box: '#e8823a', helmet: '#2a2a2a', poncho: rain > 0.25 ? '#e85a5a' : null }); st.override = { act: 'pickup' }; }
+      if (st.food > 0 && !st.route.length && st.zone === 'u') { st.food = 0; st.override = { act: 'eatIn', until: m + 18 }; }
+      if (st.override && st.override.act === 'eatIn' && m > st.override.until) st.override = null; }
+    for (const k in units) { const u = units[k]; u.sleepers = []; u.tvT = 0; u.deskT = 0; u.awake = 0; u.mjOn = false; u.redT = u.items.some(i => i.k === 'altar') ? 1 : 0; u.gtrOut = false; }
+    for (const p of people) {
+      if (p.away || p.route.length) continue;
+      const u = p.unit; if (!u || p.zone !== 'u') { if (p.act === 'guitar') units['6A'].gtrOut = true; continue; }
+      if (p.act === 'guitar') u.gtrOut = true;
+      if (p.spot && p.spot.pose === 'lie') { u.sleepers.push({ L: p.L, bed: p.spot.bed, phone: p.spot.phone }); continue; }
+      u.awake++; if (p.act === 'tv') u.tvT = 1; if (p.act === 'desk') u.deskT = 1; if (p.act === 'mj') u.mjOn = true;
+    }
+    for (const k in units) { const u = units[k]; const want = u.awake > 0 ? (u.tvT && u.awake === 1 ? 0.55 : 1) : 0; u.lamp += (want - u.lamp) * Math.min(1, dt * 6); u.tv += (u.tvT - u.tv) * Math.min(1, dt * 4); u.desk += (u.deskT - u.desk) * Math.min(1, dt * 4); u.red = u.redT; }
+    for (let f = 0; f < 7; f++) stairLit[f] = Math.max(0, stairLit[f] - dt * 0.06);
+    if (laundryOut && rain > 0.18 && !people.some(p => p.override && p.override.act === 'laundryIn')) { const r = people.find(p => p.home && !p.away && !p.override && p.act !== 'sleep' && p.act !== 'shop' && p.act !== 'mj' && p.name !== 'kid' && p.name !== 'ama'); if (r) r.override = { act: 'laundryIn' }; }
+    for (const p of people) if (p.override && p.override.act === 'laundryIn' && !laundryOut) p.override = null;
+    // neighbours' windows keep their own hours
+    for (const n of nbs) for (const wi of n.wins) {
+      if (wi.day !== Math.floor(m / 1440)) { wi.day = Math.floor(m / 1440); wi.on = [[T(17, 30) + rand() * 200, T(21, 50) + rand() * 200], rand() < 0.4 ? [T(5, 40) + rand() * 60, T(7, 30) + rand() * 60] : [0, 0], rand() < 0.12 ? [0, T(1, 0) + rand() * 180] : [0, 0]]; wi.silOn = rand() < 0.5; }
+      wi.lit = wi.on.some(([a, b]) => md >= a && md <= b) && dk > 0.2;
+    }
+    // particles
+    for (const q of parts) { q.t += dt; q.x += q.vx * dt; q.y += q.vy * dt; if (q.type === 'bag') q.vy += 40 * dt; }
+    parts = parts.filter(q => q.t < q.life); if (parts.length > 300) parts.splice(0, parts.length - 300);
+    // the cats
+    stepCats(dt, md);
+    snd.update(dt, md);
+  }
+  function stepCats(dt, md) {
+    const c = mochi, g = people.find(p => p.name === 'gtr');
+    c.t += dt;
+    if (g && (g.act === 'guitar' || g.act === 'moon') && !g.route.length && !g.away) { c.tx = g.x + (g.zone === 'roof' ? -6 : 6); c.zone = g.zone; }
+    else if (c.t > 6 + rand() * 8) { c.t = 0; c.zone = rain > 0.15 ? 'u' : pick(['roof', 'roof', 'u']); c.tx = c.zone === 'roof' ? Bx0 + 4 + rand() * 44 : units['6A'].x0 + 4 + rand() * 44; }
+    const dx = c.tx - c.x;
+    if (Math.abs(dx) > 1) { c.x += Math.sign(dx) * 7 * dt; c.dir = Math.sign(dx); c.st = 'walk'; } else c.st = (md > T(2, 0) && md < T(9, 0)) || (g && g.act === 'sleep') ? 'sleep' : 'sit';
+    c.y = roofY;
+    const feed = md > T(6, 0) && md < T(6, 45) && shopA.open > 0.5;
+    strays.forEach((s, i) => { if (feed) { s.tx = Ax0 + 8 + i * 6; if (Math.abs(s.x - s.tx) < 1.5) s.st = 'sit'; else s.st = 'walk'; } });
+    for (const s of strays) { s.t += dt; if (!feed && s.t > 8 + rand() * 10) { s.t = 0; s.tx = clamp(s.x + J(40), 4, AW - 4); } const d2 = s.tx - s.x; if (Math.abs(d2) > 1 && s.st !== 'sleep') { s.x += Math.sign(d2) * 6 * dt; s.dir = Math.sign(d2); s.st = 'walk'; } else if (s.st === 'walk') s.st = rand() < 0.5 ? 'sit' : 'sleep'; if (s.st === 'sleep' && rand() < dt * 0.02) s.st = 'sit'; }
+  }
+  function render() {
+    const m = now(), md = mod(m), dk = dark();
+    // the world, unlit
+    wx.globalCompositeOperation = 'source-over'; wx.globalAlpha = 1; wx.clearRect(0, 0, AW, AH);
+    wx.drawImage(nbc, 0, 0);
+    drawNbsDynamic(wx, md);
+    drawBuilding(wx);
+    // people inside, by floor
+    const extra = p => ({ carry: p.override && p.override.act === 'trash' && !p.override.thrown ? p.override.bag : p.food > 0 && p.route.length ? '#f4f0e6' : null, hat: p.name === 'kid' && md > T(6, 30) && md < T(17, 30) && p.route.length > 0 });
+    for (const p of people) { if (p.away || p.zone === 'street' || p.zone === 'store') continue; if (p.pose === 'lie' && !p.route.length) continue; person(wx, p.x, p.y, p.L, p.pose, p.dir, Math.floor(p.walkD / 2.5) + (p.pose !== 'walk' ? Math.floor(rt * 6) : 0), extra(p)); }
+    const mc = mochi; cat(wx, mc.x, mc.y, '#e8e2d6', mc.st, mc.dir, Math.floor(mc.t * 4));
+    for (const p of people) if (p.zone === 'store' && !p.away) person(wx, p.x, p.y, p.L, p.pose, p.dir, Math.floor(p.walkD / 2.5));
+    for (const p of peds) if (p.goal && p.goal.kind === 'store' && p.goal.inside && !p.goal.done) person(wx, p.x, p.y, p.L, p.pose, p.dir, Math.floor(p.walkD / 2.5));
+    drawStreet(wx, md);
+    // pedestrians, the residents out on the street, then the traffic
+    const walkers = peds.filter(p => !(p.goal && p.goal.kind === 'store' && p.goal.inside && !p.goal.done)).map(p => ({ p, y: p.y, res: false })).concat(people.filter(p => p.zone === 'street' && !p.away).map(p => ({ p, y: p.y, res: true })));
+    walkers.sort((a, b) => a.y - b.y);
+    for (const { p, res } of walkers) {
+      if (res) person(wx, p.x, p.y, p.L, p.pose === 'standf' ? 'stand' : p.pose, p.dir, Math.floor(p.walkD / 2.5), { ...extra(p), umb: rain > 0.15 ? (p.umbC || (p.umbC = pick(UMB))) : null });
+      else { person(wx, p.x, p.y, p.L, p.pose, p.dir, Math.floor(p.walkD / 2.5), { umb: p.umb, cup: p.cup, carry: p.carry }); if (p.dog) { const dx = p.x + p.dir * 5; wx.fillStyle = p.dog.col; wx.fillRect(Math.round(dx) - 2, Math.round(p.y) - 3, 4, 2); wx.fillRect(Math.round(dx) + (p.dir > 0 ? 2 : -3), Math.round(p.y) - 4, 2, 2); wx.fillRect(Math.round(dx) - 2 + ((p.dog.fr || 0) % 2), Math.round(p.y) - 1, 1, 1); wx.fillRect(Math.round(dx) + 1 - ((p.dog.fr || 0) % 2), Math.round(p.y) - 1, 1, 1); } }
+    }
+    drawCurb(wx);
+    for (const c of cars) if (c.lane === 1 && c.x > -60) car(wx, c);
+    for (const c of cars) if (c.lane === 2 && c.x > -60) car(wx, c);
+    for (const q of parts) {
+      const a = 1 - q.t / q.life, x = Math.round(q.x), y = Math.round(q.y);
+      if (q.type === 'steam' || q.type === 'smoke') { wx.fillStyle = q.type === 'steam' ? `rgba(240,240,240,${(0.5 * a).toFixed(3)})` : `rgba(200,200,210,${(0.4 * a).toFixed(3)})`; wx.fillRect(x + Math.round(Math.sin(q.t * 3 + q.x) * 1), y, 1, 1); }
+      else if (q.type === 'z') { wx.fillStyle = `rgba(255,255,255,${(0.8 * a).toFixed(3)})`; for (const [dx, dy] of [[0, 0], [1, 0], [2, 0], [1, 1], [0, 2], [1, 2], [2, 2]]) wx.fillRect(x + dx, y + dy, 1, 1); }
+      else if (q.type === 'note') { wx.fillStyle = q.col; for (const [dx, dy] of [[1, 0], [2, 0], [1, 1], [1, 2], [0, 3], [1, 3]]) wx.fillRect(x + dx, y + dy, 1, 1); }
+      else if (q.type === 'bag') { wx.fillStyle = q.col; wx.fillRect(x, y, 2, 2); }
+    }
+    // light it
+    lights(md, dk);
+    mx.globalCompositeOperation = 'source-over'; mx.clearRect(0, 0, AW, AH); mx.drawImage(wc, 0, 0); mx.globalCompositeOperation = 'source-in'; mx.drawImage(lm, 0, 0);
+    wx.globalCompositeOperation = 'multiply'; wx.drawImage(mk, 0, 0); wx.globalCompositeOperation = 'source-over';
+    // compose: sky behind, the lit world, glows, rain
+    drawSky(lc, md, dk);
+    lc.drawImage(wc, 0, 0);
+    lc.globalCompositeOperation = 'lighter';
+    if (lampOn(md)) for (const l of lamps) gl(lc, l.x + 6, ST - 39, 6, '255,240,210', 0.9 * dk);
+    for (const c of cars) { const front = c.x + c.dir * (c.kind === 'bus' ? 20 : c.kind === 'scooter' ? 6 : 9); gl(lc, front + c.dir * 2, c.y - 4, 3, '255,248,220', 0.45 * dk); if (wet > 0.3) { lc.globalAlpha = 0.22 * wet * dk; lc.fillStyle = '#fff0c8'; lc.fillRect(Math.round(front + c.dir * 3) - 1, Math.round(c.y) + 2, 3, 1); lc.fillRect(Math.round(front + c.dir * 3), Math.round(c.y) + 4, 1, 2); } }
+    for (const sg of signs) if (signLit(sg, md)) { gl(lc, sg.x + sg.w / 2, sg.y + sg.h / 2, Math.max(sg.w, sg.h) * 0.75, hex(sg.bg).join(','), 0.35 * dk); if (wet > 0.3 && sg.y > ST - 40) gl(lc, sg.x + sg.w / 2, ST + 14, sg.w * 0.5, hex(sg.bg).join(','), 0.25 * wet * dk); }
+    for (const k in units) { const u = units[k]; if (u.lamp > 0.5 && dk > 0.3) gl(lc, u.x0 + 28, yF(u.f) - FH + 3, 5, u.cool ? '230,245,255' : '255,235,200', 0.5 * dk); }
+    if (store) gl(lc, store.x0 + store.w / 2, ST - 8, store.w * 0.5, '230,245,255', 0.18 * dk);
+    lc.globalCompositeOperation = 'source-over'; lc.globalAlpha = 1;
+    drawRain(lc, dk);
+    if (lightning > 0.5) { lc.fillStyle = `rgba(230,236,255,${((lightning - 0.5) * 0.5).toFixed(3)})`; lc.fillRect(0, 0, AW, AH); }
+    // up to the screen, every pixel a hard square
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(lo, 0, 0, AW * S, AH * S);
+    drawSigns(md, dk);
+  }
+  function signSprite(sg) {
+    const w = sg.w * S, h = sg.h * S; const [c, g] = mkC(); c.width = w; c.height = h;
+    g.fillStyle = sg.bg; g.fillRect(0, 0, w, h);
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(0, h - Math.max(1, S / 2), w, Math.max(1, S / 2));
+    if (sg.stripe) { g.fillStyle = '#e85a2a'; g.fillRect(0, h * 0.78, w, h * 0.12); g.fillStyle = '#3a9a5a'; g.fillRect(0, h * 0.9, w, h * 0.1); }
+    g.fillStyle = sg.fg; g.textAlign = 'center'; g.textBaseline = 'middle';
+    const fam = '"Noto Sans TC", "PingFang TC", "Microsoft JhengHei", "Heiti TC", sans-serif';
+    if (sg.vert) { const chars = [...sg.text], n = chars.length, cs = Math.min(w * 0.82, h / n * 0.86); g.font = `700 ${Math.floor(cs)}px ${fam}`; chars.forEach((ch, i) => g.fillText(ch, w / 2, h * (i + 0.5) / n + cs * 0.04)); }
+    else { const fs = Math.floor(Math.min(h * 0.72, w / ([...sg.text].length * 0.9))); g.font = `700 ${fs}px ${fam}`; g.fillText(sg.text, w / 2, h / 2 + fs * 0.04); }
+    return c;
+  }
+  function drawSigns(md, dk) {
+    const amb = ambient(), shadeK = (amb[0] + amb[1] + amb[2]) / 765;
+    for (const sg of signs) {
+      if (!sg.spr || sg.sprS !== S) { sg.spr = signSprite(sg); sg.sprS = S; }
+      const lit = signLit(sg, md);
+      ctx.globalAlpha = 1; ctx.drawImage(sg.spr, Math.round(sg.x * S), Math.round(sg.y * S));
+      if (!lit || dk < 0.2) { ctx.globalAlpha = (1 - Math.max(shadeK, lit ? 0.9 : 0)) * 0.85; ctx.fillStyle = css(mixc(amb, [10, 12, 30], 0.6)); ctx.fillRect(Math.round(sg.x * S), Math.round(sg.y * S), sg.w * S, sg.h * S); }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // ---------- sound ----------
+  const snd = (() => {
+    let ac = null, out = null, rev = null, nbuf = null, rainG = null, rainLo = null, humG = null, tvG = null, gtrBus = null, gtrPan = null, truckBus = null, truckPan = null;
+    const self = { on: false };
+    const voices = new Map(); const ksCache = {};
+    let truckNext = 0, truckI = 0, gtrNext = 0, gtrStep = 0, gtrBar = 0, gtrProg = 0, gtrPause = 0, mjNext = 0, birdNext = 0, frogNext = 0, dripNext = 0, bellDay = -1, tvNext = 0;
+    const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
+    const pan = x => clamp((x - AW / 2) / (AW * 0.6), -0.9, 0.9);
+    function init() {
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      const comp = ac.createDynamicsCompressor(); comp.threshold.value = -18; comp.ratio.value = 3; comp.knee.value = 10; comp.connect(ac.destination);
+      out = ac.createGain(); out.gain.value = 0; out.connect(comp);
+      rev = ac.createConvolver(); const len = Math.floor(ac.sampleRate * 2.2), ir = ac.createBuffer(2, len, ac.sampleRate);
+      for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2); }
+      rev.buffer = ir; const rg = ac.createGain(); rg.gain.value = 0.22; rev.connect(rg); rg.connect(out);
+      nbuf = ac.createBuffer(1, ac.sampleRate * 3, ac.sampleRate); { const d = nbuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
+      const loop = (type, f, q) => { const s = ac.createBufferSource(); s.buffer = nbuf; s.loop = true; const fl = ac.createBiquadFilter(); fl.type = type; fl.frequency.value = f; fl.Q.value = q || 0.7; const g = ac.createGain(); g.gain.value = 0; s.connect(fl); fl.connect(g); g.connect(out); s.start(); return g; };
+      rainG = loop('bandpass', 2600, 0.4); rainLo = loop('lowpass', 420, 0.5); humG = loop('lowpass', 160, 0.6);
+      tvG = loop('bandpass', 900, 2.5);
+      gtrBus = ac.createGain(); gtrBus.gain.value = 0.55; gtrPan = ac.createStereoPanner ? ac.createStereoPanner() : ac.createGain(); gtrBus.connect(gtrPan); gtrPan.connect(out); const gs = ac.createGain(); gs.gain.value = 0.5; gtrBus.connect(gs); gs.connect(rev);
+      truckBus = ac.createGain(); truckBus.gain.value = 0; truckPan = ac.createStereoPanner ? ac.createStereoPanner() : ac.createGain(); const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 380; const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2400; truckBus.connect(hp); hp.connect(lp); lp.connect(truckPan); truckPan.connect(out); const ts = ac.createGain(); ts.gain.value = 0.6; lp.connect(ts); ts.connect(rev);
+    }
+    function ks(m) {
+      if (ksCache[m]) return ksCache[m];
+      const sr = ac.sampleRate, f = mtof(m), N = Math.max(2, Math.round(sr / f)), len = Math.floor(sr * 3), b = ac.createBuffer(1, len, sr), d = b.getChannelData(0), buf = new Float32Array(N);
+      for (let i = 0; i < N; i++) buf[i] = Math.random() * 2 - 1;
+      for (let k = 0; k < 2; k++) for (let i = 1; i < N; i++) buf[i] = 0.5 * (buf[i] + buf[i - 1]);
+      let p = 0; const dec = 0.9965 - Math.max(0, m - 52) * 0.00012;
+      for (let i = 0; i < len; i++) { const nx = (p + 1) % N, v = buf[p]; d[i] = v * 0.8; buf[p] = dec * 0.5 * (v + buf[nx]); p = nx; }
+      return (ksCache[m] = b);
+    }
+    function pluck(m, t, v) { const s = ac.createBufferSource(); s.buffer = ks(m); const g = ac.createGain(); g.gain.setValueAtTime(v, t); g.gain.setTargetAtTime(0, t + 2.2, 0.3); s.connect(g); g.connect(gtrBus); s.start(t); s.stop(t + 3); }
+    function tone(f, t, dur, v, type, dest, pn) { const o = ac.createOscillator(), g = ac.createGain(); o.type = type || 'sine'; o.frequency.setValueAtTime(f, t); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v, t + 0.006); g.gain.setTargetAtTime(0, t + 0.01, dur * 0.4); let node = g; if (pn !== undefined && ac.createStereoPanner) { const p = ac.createStereoPanner(); p.pan.value = pn; g.connect(p); node = p; } o.connect(g); node.connect(dest || out); o.start(t); o.stop(t + dur * 3 + 0.1); return o; }
+    function noise(t, dur, type, f, v, q, pn, dest) { const s = ac.createBufferSource(), fl = ac.createBiquadFilter(), g = ac.createGain(); s.buffer = nbuf; fl.type = type; fl.frequency.value = f; fl.Q.value = q || 1; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v, t + Math.min(0.01, dur * 0.2)); g.gain.exponentialRampToValueAtTime(0.0001, t + dur); s.connect(fl); fl.connect(g); let node = g; if (pn !== undefined && ac.createStereoPanner) { const p = ac.createStereoPanner(); p.pan.value = pn; g.connect(p); node = p; } node.connect(dest || out); s.start(t, Math.random() * 2); s.stop(t + dur + 0.05); }
+    // Für Elise, the way the trucks play it
+    const FE = [[76, 1], [75, 1], [76, 1], [75, 1], [76, 1], [71, 1], [74, 1], [72, 1], [69, 2], [0, 1], [60, 1], [64, 1], [69, 1], [71, 2], [0, 1], [64, 1], [68, 1], [71, 1], [72, 2], [0, 1], [64, 1], [76, 1], [75, 1], [76, 1], [75, 1], [76, 1], [71, 1], [74, 1], [72, 1], [69, 2], [0, 1], [60, 1], [64, 1], [69, 1], [71, 2], [0, 1], [64, 1], [72, 1], [71, 1], [69, 4], [0, 4]];
+    // the guitar on the roof: A minor, finger-picked, a little loose
+    const CH = { Am: [45, 52, 57, 60, 64], F: [41, 48, 53, 57, 60, 65], C: [48, 52, 55, 60, 64], G: [43, 47, 50, 55, 59, 67], Em: [40, 47, 52, 55, 59, 64], Dm: [50, 57, 62, 65], E7: [40, 47, 50, 56, 59, 64] };
+    const PROGS = [['Am', 'Am', 'F', 'F', 'C', 'C', 'G', 'G'], ['Am', 'Em', 'F', 'C', 'Dm', 'Am', 'E7', 'E7'], ['C', 'Am', 'F', 'G', 'C', 'Am', 'Dm', 'E7'], ['Am', 'G', 'F', 'E7', 'Am', 'G', 'F', 'E7']];
+    self.level = () => { if (!self.an) return [0, 0]; const d = new Float32Array(2048); self.an.getFloatTimeDomainData(d); let q = 0, pk = 0; for (const x of d) { q += x * x; pk = Math.max(pk, Math.abs(x)); } return [Math.sqrt(q / d.length), pk]; };
+    self.start = () => { try { if (!ac) init(); } catch (e) { return; } if (ac.resume) ac.resume(); self.on = true; out.gain.setTargetAtTime(0.9, ac.currentTime, 0.4); for (const c of cars) self.car(c); };
+    self.car = c => { if (!self.on || !ac || voices.size > 7) return; if (c.kind === 'truck' && !c.recycle) return; const o = ac.createOscillator(), lfo = ac.createOscillator(), lg = ac.createGain(), fl = ac.createBiquadFilter(), g = ac.createGain(), p = ac.createStereoPanner ? ac.createStereoPanner() : null; const sc = c.kind === 'scooter'; o.type = 'sawtooth'; o.frequency.value = sc ? 80 + Math.random() * 50 : 55 + Math.random() * 20; lfo.type = 'square'; lfo.frequency.value = sc ? 22 + Math.random() * 10 : 14; lg.gain.value = sc ? 0.5 : 0.2; const am = ac.createGain(); am.gain.value = 0.5; lfo.connect(lg); lg.connect(am.gain); fl.type = 'lowpass'; fl.frequency.value = sc ? 700 : 380; g.gain.value = 0; o.connect(fl); fl.connect(am); am.connect(g); if (p) { g.connect(p); p.connect(out); } else g.connect(out); const ns = ac.createBufferSource(); ns.buffer = nbuf; ns.loop = true; const nf = ac.createBiquadFilter(); nf.type = 'bandpass'; nf.frequency.value = sc ? 900 : 500; const ng = ac.createGain(); ng.gain.value = 0.25; ns.connect(nf); nf.connect(ng); ng.connect(g); o.start(); lfo.start(); ns.start(0, Math.random() * 2); voices.set(c.id, { o, lfo, ns, g, p, c, f0: o.frequency.value }); };
+    self.ev = (name, x) => {
+      if (!self.on || !ac) return; const t = ac.currentTime, pn = pan(x || AW / 2);
+      if (name === 'chime') { tone(784, t, 0.5, 0.05, 'sine', out, pn); tone(659, t + 0.28, 0.7, 0.05, 'sine', out, pn); }
+      else if (name === 'toss') noise(t, 0.18, 'lowpass', 600, 0.12, 0.7, pn);
+      else if (name === 'door') { noise(t, 0.08, 'bandpass', 1200, 0.08, 2, pn); noise(t + 0.25, 0.12, 'lowpass', 500, 0.1, 1, pn); }
+      else if (name === 'start') { const o = tone(70, t, 0.6, 0.05, 'sawtooth', out, pn); o.frequency.linearRampToValueAtTime(130, t + 0.5); }
+      else if (name === 'thunder') { noise(t + 0.6 + Math.random() * 1.5, 3.5, 'lowpass', 110, 0.5, 0.6, pn); noise(t + 0.5, 0.6, 'lowpass', 300, 0.25, 0.6, pn); }
+    };
+    self.update = (dt, md) => {
+      if (!self.on || !ac) return;
+      const t = ac.currentTime, dk = dark();
+      if (!self.an) { self.an = ac.createAnalyser(); self.an.fftSize = 2048; out.connect(self.an); }
+      rainG.gain.setTargetAtTime(0.16 * Math.pow(rain, 1.1), t, 0.5); rainLo.gain.setTargetAtTime(0.25 * rain * rain, t, 0.5);
+      humG.gain.setTargetAtTime(0.03 + 0.012 * trafficRate(now()), t, 1);
+      // drips on the metal roof of the add-on
+      if (rain > 0.05 && t > dripNext) { dripNext = t + 0.03 + Math.random() * 0.3 / (rain + 0.1); tone(1800 + Math.random() * 2600, t, 0.05, 0.012 * rain, 'sine', out, pan(Ax0 + 20)); }
+      // traffic voices
+      for (const [id, v] of voices) {
+        const c = v.c; if (!cars.includes(c)) { v.g.gain.setTargetAtTime(0, t, 0.1); v.o.stop(t + 0.5); v.lfo.stop(t + 0.5); v.ns.stop(t + 0.5); voices.delete(id); continue; }
+        const dx = c.x - AW / 2, dist = Math.abs(dx) / (AW * 0.6), near = c.lane === 2 ? 1 : 0.7;
+        v.g.gain.setTargetAtTime((c.kind === 'scooter' ? 0.05 : 0.04) * near * Math.max(0, 1 - dist) * (0.4 + 0.6 * Math.min(1, c.v / c.spd)), t, 0.08);
+        v.o.frequency.setTargetAtTime(v.f0 * (1 + 0.35 * Math.min(1, c.v / c.spd)) * (1 - 0.05 * Math.sign(dx) * c.dir), t, 0.1);
+        if (v.p) v.p.pan.setTargetAtTime(pan(c.x), t, 0.08);
+      }
+      // the garbage truck's song
+      if (truck) {
+        const dist = Math.abs(truck.x - AW / 2) / (AW * 0.9), g = 0.2 * Math.max(0.15, 1 - dist);
+        truckBus.gain.setTargetAtTime(g, t, 0.3); if (truckPan.pan) truckPan.pan.setTargetAtTime(pan(truck.x), t, 0.2);
+        if (truckNext < t) truckNext = t + 0.05;
+        while (truckNext < t + 0.3) { const [m, n] = FE[truckI % FE.length]; if (m) { const o = ac.createOscillator(), og = ac.createGain(); o.type = 'square'; o.frequency.value = mtof(m); og.gain.setValueAtTime(0, truckNext); og.gain.linearRampToValueAtTime(0.5, truckNext + 0.01); og.gain.setTargetAtTime(0, truckNext + 0.06, 0.08 * n); o.connect(og); og.connect(truckBus); o.start(truckNext); o.stop(truckNext + 0.15 * n + 0.4); if (truckI % 6 === 0) { const b = ac.createOscillator(), bg = ac.createGain(); b.type = 'triangle'; b.frequency.value = mtof(m < 66 ? 45 : 45); bg.gain.setValueAtTime(0.25, truckNext); bg.gain.setTargetAtTime(0, truckNext + 0.05, 0.2); b.connect(bg); bg.connect(truckBus); b.start(truckNext); b.stop(truckNext + 0.8); } } truckNext += 0.15 * n; truckI++; }
+        if (rand() < dt * 1.2) parts.push({ type: 'note', x: truck.x + J(6), y: truck.y - 14, vx: J(3), vy: -6, t: 0, life: 2, col: pick(['#ffe070', '#ffffff', '#a0e0ff']) });
+      } else { truckBus.gain.setTargetAtTime(0, t, 0.5); truckI = 0; }
+      // the guitar
+      const gp = people.find(p => p.name === 'gtr');
+      if (gp && gp.act === 'guitar' && !gp.route.length && !gp.away) {
+        const indoor = gp.zone === 'u'; gtrBus.gain.setTargetAtTime(indoor ? 0.9 : 1.4, t, 0.5); if (gtrPan.pan) gtrPan.pan.setTargetAtTime(pan(gp.x), t, 0.5);
+        if (gtrNext < t) gtrNext = t + 0.1;
+        while (gtrNext < t + 0.35) {
+          const eighth = 0.36;
+          if (gtrPause > 0) { gtrNext += eighth; gtrPause--; continue; }
+          const prog = PROGS[gtrProg], ch = CH[prog[gtrBar % prog.length]], top = ch.slice(-3), pat = [ch[0], top[0], top[1], top[2], top[1], top[0]];
+          let m = pat[gtrStep % 6]; if (gtrStep % 6 === 3 && Math.random() < 0.25) m = top[2] + (Math.random() < 0.5 ? 2 : 3);
+          pluck(m, gtrNext + Math.random() * 0.02, gtrStep % 6 === 0 ? 0.55 : 0.32 + Math.random() * 0.08);
+          if (gtrStep % 6 === 0 && Math.random() < 0.3) pluck(top[2], gtrNext + 0.01, 0.25);
+          gtrNext += eighth * (1 + J(0.04)); gtrStep++;
+          if (gtrStep % 6 === 0) { gtrBar++; if (gtrBar % prog.length === 0) { if (Math.random() < 0.35) { gtrProg = Math.floor(Math.random() * PROGS.length); } if (Math.random() < 0.3) gtrPause = 6 + Math.floor(Math.random() * 18); } }
+        }
+      } else gtrBus.gain.setTargetAtTime(0, t, 0.4);
+      // mahjong tiles on Saturday nights
+      if (units['4A'].mjOn && t > mjNext) { mjNext = t + 0.6 + Math.random() * 2.4; const n = 1 + Math.floor(Math.random() * 4); for (let i = 0; i < n; i++) noise(t + i * 0.07 + Math.random() * 0.03, 0.03, 'bandpass', 2600 + Math.random() * 900, 0.08, 4, pan(units['4A'].x0 + 28)); if (Math.random() < 0.08) for (let i = 0; i < 26; i++) noise(t + 0.4 + i * 0.045 + Math.random() * 0.03, 0.03, 'bandpass', 2400 + Math.random() * 1200, 0.04, 3, pan(units['4A'].x0 + 28)); }
+      // televisions murmuring through the walls
+      const tvs = Object.values(units).filter(u => u.tv > 0.5).length; tvG.gain.setTargetAtTime(0.006 * tvs * (0.5 + 0.5 * Math.sin(t * 3.3) * Math.sin(t * 1.7)), t, 0.1);
+      // birds at dawn, frogs after rain
+      if (md > T(5, 30) && md < T(8, 0) && rain < 0.2 && t > birdNext) { birdNext = t + 0.5 + Math.random() * 3; const f = 2400 + Math.random() * 1600, pn = J(0.8); for (let i = 0; i < 2 + Math.floor(Math.random() * 3); i++) { const o = tone(f, t + i * 0.12, 0.06, 0.02, 'sine', out, pn); o.frequency.exponentialRampToValueAtTime(f * 1.4, t + i * 0.12 + 0.06); } }
+      if ((md > T(19, 0) || md < T(4, 0)) && wet > 0.4 && rain < 0.5 && t > frogNext) { frogNext = t + 0.8 + Math.random() * 4; const pn = J(0.9); for (let i = 0; i < 3 + Math.floor(Math.random() * 4); i++) tone(380 + Math.random() * 60, t + i * 0.09, 0.05, 0.02, 'square', out, pn); }
+      // the temple bell at dusk and dawn
+      const day = Math.floor(now() / 1440) * 2 + (md > T(12, 0) ? 1 : 0);
+      if (day !== bellDay && (Math.abs(md - T(5, 30)) < 1 || Math.abs(md - T(17, 30)) < 1)) { bellDay = day; for (const [r, a] of [[1, 1], [2.76, 0.4], [5.4, 0.2], [0.5, 0.5]]) tone(98 * r, t, 6, 0.03 * a, 'sine', rev, 0); }
+    };
+    return self;
+  })();
+
+  // ---------- run ----------
+  layout(); makePeople();
+  addEventListener('resize', () => {
+    layout(); cars = []; peds = []; parts = []; truck = null;
+    for (const p of people) { p.home = p.ukey ? units[p.ukey] : null; p.unit = p.home; p.waitRide = false; p.ride = null; p.override = null; placeAt(p, desired(p)); }
+    mochi.x = mochi.tx = Bx0 + 20; for (const c of strays) { c.x = c.tx = clamp(c.x, 4, AW - 4); }
+  });
+  cv.addEventListener('pointerdown', () => { if (!snd.on) { snd.start(); hintEl.style.opacity = 0; } });
+  if (document.fonts && document.fonts.load) document.fonts.load('700 20px "Noto Sans TC"', '早餐茶麵美語超商').then(() => { for (const sg of signs) sg.spr = null; }).catch(() => {});
+  let last = performance.now(), acc = 0, t0 = performance.now();
+  function frame(nowp) {
+    acc += Math.min(0.1, (nowp - last) / 1000); last = nowp;
+    let n = 0; while (acc >= DT && n < 6) { update(DT); acc -= DT; n++; } if (n === 6) acc = 0;
+    render();
+    const el = (nowp - t0) / 1000;
+    titleEl.style.opacity = el < 0.4 ? 0 : el < 6 ? 1 : 0;
+    if (!snd.on) hintEl.style.opacity = el > 1.2 ? 0.9 : 0;
+    requestAnimationFrame(frame);
+  }
+  window.__rm = {
+    seek: mins => { const target = rt + mins / SPEED; while (rt < target) update(DT); render(); },
+    frame: () => render(), now: () => { const m = now(); return { day: dayOf(m), h: Math.floor(mod(m) / 60), m: Math.floor(mod(m) % 60), rain: rain.toFixed(2) }; },
+    who: () => people.map(p => `${p.name}:${p.act}:${p.zone}${p.route.length ? '~' : ''}`).join(' '),
+    dbg: n => { const p = people.find(q => q.name === n); return JSON.stringify({ x: p.x, y: p.y, zone: p.zone, f: p.f, act: p.act, unit: p.unit && p.unit.key, route: p.route, spot: p.spot && { zone: p.spot.zone, x: p.spot.x, y: p.spot.y, f: p.spot.f }, wr: p.waitRide, away: p.away }); },
+    tdbg: () => truck ? JSON.stringify({ x: Math.round(truck.x), v: truck.v.toFixed(1), at: truck.atStop, w: truck.wait.toFixed(1), done: truck.done, ahead: cars.filter(c => c.lane === 2 && c.kind !== 'scooter' && c !== truck && c.x > truck.x).map(c => c.kind + '@' + Math.round(c.x) + ':' + c.v.toFixed(1) + (c.atStop ? 'S' : '') + (c.ride ? c.ride.name : '')).join(','), waiting: people.filter(p => p.override && p.override.act === 'trash').map(p => p.name + ':' + p.zone + ':' + p.route.length + (p.override.tossed ? 'T' : '')).join(',') }) : '',
+    setRain: v => { rain = rainT = v; nextWx = now() + 120; }, cars: () => cars.length, peds: () => peds.length, snd, truck: () => !!truck
+  };
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
