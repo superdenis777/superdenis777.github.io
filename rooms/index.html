@@ -95,7 +95,7 @@
   function person(g, X, Y, L, pose, dir, fr, o = {}) {
     const x = Math.round(X), y = Math.round(Y), h = L.h;
     const R = (dx, dy, w, hh, c) => { g.fillStyle = c; g.fillRect(x + dx, y + dy, w, hh); };
-    const d = dir || 1, front = o.front || pose === 'sitf' || pose === 'standf', back = o.back || pose === 'sitb';
+    const d = dir || 1, front = o.front || pose === 'sitf' || pose === 'standf', back = o.back || pose === 'sitb' || pose === 'standb';
     let oy = 0; const seated = pose === 'sit' || pose === 'sitf' || pose === 'sitb' || pose === 'guitar';
     if (seated) oy = 1;
     const hx = L.hunch && !front && !back ? d : 0, hy = L.hunch ? 1 : 0;
@@ -315,6 +315,7 @@
     gtr: d => d === 4 ? [[0, 'guitar'], [T(1, 10) + J(10), 'moon'], [T(1, 30), 'sleep'], [T(11, 0) + J(20), 'wake'], [T(11, 20), 'desk'], [T(12, 30), 'kettle'], [T(13, 10), 'guitar'], [T(15, 10), 'out', { side: -1 }], [T(21, 0), 'store'], [T(21, 20), 'eat'], [T(21, 50), 'out', { side: 1, via: 'taxi' }]]
       : d === 5 ? [[0, 'out', { side: 1, via: 'taxi' }], [T(2, 40), 'guitar'], [T(3, 20), 'moon'], [T(3, 45), 'sleep'], [T(12, 20), 'wake'], [T(12, 40), 'kettle'], [T(13, 10), 'guitar'], [T(15, 0), 'out', { side: -1 }], [T(19, 10), 'store'], [T(19, 30), 'eat'], [T(20, 0), 'desk'], [T(22, 30), 'guitar']]
       : [[0, 'guitar'], [T(1, 0) + J(15), 'moon'], [T(1, 25), 'sleep'], [T(10, 50) + J(20), 'wake'], [T(11, 10), 'desk'], [T(12, 30), 'kettle'], [T(13, 10), 'guitar'], [T(15, 15), 'out', { side: -1 }], [T(21, 30), 'store'], [T(21, 50), 'eat'], [T(22, 20), 'guitar']],
+    grandson: d => d === 6 ? [[0, 'out', { side: -1 }], [T(10, 50) + J(10), 'tv'], [T(12, 25), 'eat'], [T(13, 0), 'tv'], [T(15, 30) + J(15), 'out', { side: -1 }]] : [[0, 'out', { side: -1 }]],
     friend: d => d === 5 ? [[0, 'out', { side: 1 }], [T(19, 15), 'mj'], [T(23, 55), 'out', { side: 1 }]] : [[0, 'out', { side: 1 }]]
   };
   const RES = [
@@ -330,7 +331,8 @@
     ['old', '5A', { hair: '#bdbdbd', shirt: '#9a8a6a', hunch: true, h: 9 }],
     ['mei', '5B', { shirt: '#e07a5f', long: true }],
     ['gtr', '6A', { hair: '#4a3426', shirt: '#3d5a4a', pants: '#2b3447', beard: true }],
-    ['friend', null, { hair: '#9a9a9a', shirt: '#7a5a3a' }]
+    ['friend', null, { hair: '#9a9a9a', shirt: '#7a5a3a' }],
+    ['grandson', '1B', { shirt: '#e85a5a', pants: '#2b3447' }]
   ];
   let people = [], peds = [], cars = [], parts = [], mochi = null, strays = [], train = null, plane = null, birds = [], lightning = 0;
   let rain = 0, rainT = 0, nextWx = START + 75, wind = 0, wet = 0, mist = 0;
@@ -340,7 +342,7 @@
     const P = n => people.find(p => p.name === n);
     for (const n of ['linM', 'dad', 'cpM', 'uncle', 'dad2']) P(n).slot = 0;
     for (const n of ['linW', 'mom', 'cpW', 'auntie', 'teen']) P(n).slot = 1;
-    P('kid').slot = 2;
+    P('kid').slot = 2; P('grandson').slot = 1;
     P('uncle').mj = 0; P('ama').mj = 1; P('old').mj = 2; P('friend').mj = 3;
     // place everyone where their plan says they are right now, without walking
     for (const p of people) { const a = desired(p); placeAt(p, a); }
@@ -384,6 +386,9 @@
       case 'store': return { zone: 'store', f: 0, x: store ? store.x0 + 26 + Math.floor(rand() * (store.w - 38)) : AW + 20, y: ST, pose: 'standf', dir: 1 };
       case 'trash': return { zone: 'street', f: 0, x: p.override.wx, y: SW, pose: 'stand', dir: 1, carry: p.override.bag };
       case 'eatIn': return u && u.it.desk ? at(u.it.desk, o > 0 ? u.it.desk.w + 2 : -3, -o, 'sit', { lamp: true }) : null;
+      case 'hug': return u ? { zone: 'u', unit: u, f, x: u.x0 + 22 + (p.slot ? 3 : 0), y: yF(f), pose: 'stand', dir: p.slot ? -1 : 1, hug: true } : null;
+      case 'sulk': return u ? { zone: 'u', unit: u, f, x: u.x0 + (u.o > 0 ? 20 : UW - 20), y: yF(f), pose: 'standb', dir: 1 } : null;
+      case 'cake': if (u && u.it.table) { const s = p.slot % 3; return s === 0 ? at(u.it.table, -2, 1, 'sit') : s === 1 ? at(u.it.table, u.it.table.w + 1, -1, 'sit') : at(u.it.table, Math.floor(u.it.table.w / 2), 1, 'sitb'); } break;
       case 'pickup': return { zone: 'street', f: 0, x: gateX + 4, y: SW, pose: 'stand', dir: 1 };
       case 'out': return { zone: 'away', f: 0, x: opt.side < 0 ? -10 : AW + 10, y: SW, via: opt.via };
     }
@@ -446,6 +451,13 @@
       }
     }
     if (p.waitRide) return;
+    if (p.pause > 0) { p.pause -= dt; p.pose = 'stand'; if (p.pauseDir) p.dir = p.pauseDir; return; }
+    if (p.route.length && (p.zone === 'stair' || p.zone === 'street') && rt - (p.greet || -99) > 50) {
+      for (const q of people) {
+        if (q === p || q.away || q.zone !== p.zone || !q.route.length || rt - (q.greet || -99) < 50 || q.pause > 0) continue;
+        if (Math.abs(q.x - p.x) < 4 && Math.abs(q.y - p.y) < 3) { p.greet = q.greet = rt; p.pause = q.pause = 1.6 + rand(); p.pauseDir = q.x >= p.x ? 1 : -1; q.pauseDir = -p.pauseDir; bubble(p, 'chat', 1.6); bubble(q, 'hi', 1.6); break; }
+      }
+    }
     if (p.route.length) {
       const n = p.route[0], dx = n.x - p.x, dy = n.y - p.y, dist = Math.hypot(dx, dy), stairs = Math.abs(dy) > 0.5 && Math.abs(dx) > 0.5;
       const step = p.spd * dt * (stairs ? 0.75 : 1);
@@ -470,11 +482,42 @@
     p.pose = s.pose || 'stand'; if (s.dir) p.dir = s.dir;
     if (s.laundry === 'laundry' && !laundryOut && rain < 0.1) { laundryOut = true; laundry = 0; }
     if (s.laundry === 'laundryIn' && laundryOut) { laundry += dt * 0.5; if (laundry > 1) laundryOut = false; }
+    if (p.act === 'tv' && rand() < dt * 0.012) bubble(p, 'ha', 1.6);
+    if (p.act === 'eat' && p.home && people.filter(q => q.spot && q.act === 'eat' && q.unit === p.unit && !q.route.length).length > 1 && rand() < dt * 0.03) bubble(p, 'chat', 1.8);
+    if (p.act === 'desk' && p.name === 'kid' && rand() < dt * 0.03) bubble(p, '?', 1.6);
+    if (p.act === 'mj' && rand() < dt * 0.015) bubble(p, rand() < 0.75 ? '!' : 'ha', 1.4);
+    if (p.act === 'eatIn' && rand() < dt * 0.05) bubble(p, 'bowl', 1.6);
     if (p.pose === 'cook' && rand() < dt * 3) parts.push({ type: 'steam', x: p.x + p.dir * 3, y: p.y - 11, vx: J(1), vy: -4, t: 0, life: 2 });
     if (p.pose === 'pray' && rand() < dt * 2) parts.push({ type: 'smoke', x: p.x + p.dir * 3, y: p.y - 10, vx: J(0.6), vy: -3, t: 0, life: 3 });
     if (p.pose === 'lie' && p.act === 'sleep' && dark() > 0.4 && rand() < dt * 0.25) parts.push({ type: 'z', x: p.x + 2, y: p.y - 9, vx: 1.2, vy: -2.5, t: 0, life: 3 });
     if (p.pose === 'guitar' && snd.on && rand() < dt * 0.7) parts.push({ type: 'note', x: p.x + 4, y: p.y - 12, vx: J(2) + 1, vy: -4, t: 0, life: 2.6, col: '#f0e0a0' });
   }
+  let drama = null, dramaDay = -1, bday = null, bdayDay = -1;
+  function stepDramas(dt, m, md) {
+    const day = Math.floor(m / 1440), by = n => people.find(q => q.name === n);
+    // the couple in 2B: some nights a fight, a cooling off on opposite sides of the room, then a hug
+    const a = by('cpM'), b = by('cpW');
+    if (!drama && dramaDay !== day && md > T(20, 20) && md < T(22, 20) && a.act === 'tv' && b.act === 'tv' && !a.route.length && !b.route.length && !a.override && !b.override && rand() < dt * 0.02) { dramaDay = day; if (rand() < 0.55) drama = { ph: 'argue', t: 0, k: -1 }; }
+    if (drama) {
+      drama.t += dt;
+      if (drama.ph === 'argue') { const k = Math.floor(drama.t / 0.75); if (k !== drama.k) { drama.k = k; const who = k % 2 ? a : b; who.bub = { icon: k % 5 === 4 ? '?' : '!', t: rt, d: 0.8 }; snd.ev('blip', who.x); } if (drama.t > 6) { drama.ph = 'cool'; drama.t = 0; b.override = { act: 'sulk' }; } }
+      else if (drama.ph === 'cool') { if (drama.t > 3 && rand() < dt * 0.4) bubble(rand() < 0.5 ? a : b, 'chat', 1.2); if (drama.t > 10) { drama.ph = 'hug'; drama.t = 0; a.override = { act: 'hug' }; b.override = { act: 'hug' }; } }
+      else if (drama.ph === 'hug') { if (!a.route.length && !b.route.length && rand() < dt * 1.2) { const who = rand() < 0.5 ? a : b; who.bub = { icon: 'heart', t: rt, d: 1.3 }; snd.ev('blip', who.x); } if (drama.t > 10) { a.override = b.override = null; drama = null; } }
+      if (drama && (a.away || b.away)) { a.override = b.override = null; drama = null; }
+    }
+    // Sunday evening in 2A: a cake, the lights off, the song
+    const fam = ['dad', 'mom', 'kid'].map(by), u = units['2A'];
+    if (!bday && bdayDay !== day && dayOf(m) === 6 && md > T(18, 12) && md < T(18, 30) && fam.every(q => !q.away && q.zone === 'u' && q.unit === u && !q.override)) { bdayDay = day; bday = { ph: 'gather', t: 0 }; for (const q of fam) q.override = { act: 'cake' }; }
+    if (bday) {
+      bday.t += dt;
+      const seated = fam.every(q => !q.route.length && q.act === 'cake');
+      if (bday.ph === 'gather' && (seated || bday.t > 30)) { bday.ph = 'song'; bday.t = 0; u.cake = 1; snd.ev('bday', u.x0 + 24); }
+      else if (bday.ph === 'song') { if (rand() < dt * 1.2) { const who = pick(fam); who.bub = { icon: who.name === 'kid' ? 'cake' : 'note', t: rt, d: 1.4 }; } if (bday.t > 14) { bday.ph = 'after'; bday.t = 0; u.cake = 2; const tb = u.it.table; for (let i = 0; i < 6; i++) parts.push({ type: 'smoke', x: tb.x + 3 + (i % 3), y: yF(2) - 11, vx: J(1), vy: -4, t: 0, life: 2 }); fam[2].bub = { icon: 'heart', t: rt, d: 2 }; fam[0].bub = { icon: 'heart', t: rt + 0.3, d: 2 }; fam[1].bub = { icon: 'heart', t: rt + 0.6, d: 2 }; snd.ev('blip', u.x0 + 24); } }
+      else if (bday.ph === 'after' && bday.t > 12) { for (const q of fam) q.override = null; u.cake = 0; bday = null; }
+      if (bday && fam.some(q => q.away)) { for (const q of fam) q.override = null; u.cake = 0; bday = null; }
+    }
+  }
+  function bubble(p, icon, d) { if (!p.bub || rt - p.bub.t > p.bub.d * 0.6) { p.bub = { icon, t: rt, d }; if (icon === 'heart' || icon === '!') snd.ev('blip', p.x); } }
   // brought home: a taxi stops at the gate, or their scooter pulls into a space
   function arriveRide(p) {
     p.waitRide = true; p.route = [];
@@ -626,7 +669,8 @@
       case 'fridge': R(g, x, y - 13, w, 13, '#dfe3e6'); R(g, x, y - 9, w, 1, '#b4b9bd'); R(g, x + (o > 0 ? w - 1 : 0), y - 12, 1, 2, '#8a8f93'); break;
       case 'mfridge': R(g, x, y - 7, w, 7, '#e2e4e6'); R(g, x, y - 7, w, 1, '#c4c8cc'); break;
       case 'stove': R(g, x, y - 8, w, 8, '#c9c4bb'); R(g, x, y - 8, w, 1, '#8f9399'); R(g, x + 1, y - 6, 3, 4, '#a9a49b'); R(g, x + 6, y - 6, 3, 4, '#a9a49b'); R(g, x + 2, y - 11, 4, 3, '#4d565f'); R(g, x + 1, y - 11, 6, 1, '#6d767f'); R(g, x + 1, y - 26, w - 2, 4, '#b0b3b6'); R(g, x + 2, y - 22, w - 4, 1, '#8f9399'); break;
-      case 'table': R(g, x, y - 6, w, 1, '#8a6a4a'); R(g, x + 1, y - 5, 1, 5, '#6a5038'); R(g, x + w - 2, y - 5, 1, 5, '#6a5038'); R(g, x - 3, y - 3, 2, 3, '#5e4632'); R(g, x + w + 1, y - 3, 2, 3, '#5e4632'); break;
+      case 'table': if (u.cake) { R(g, x + 2, y - 9, 4, 3, '#f6e8ee'); R(g, x + 2, y - 9, 4, 1, '#e86a9a'); if (u.cake === 1) for (let i = 0; i < 3; i++) { R(g, x + 2 + i * 1.5 | 0, y - 11, 1, 2, '#f4f4f0'); R(g, x + 2 + i * 1.5 | 0, y - 12, 1, 1, Math.sin(rt * 20 + i) > 0 ? '#ffd040' : '#ff8a30'); } }
+        R(g, x, y - 6, w, 1, '#8a6a4a'); R(g, x + 1, y - 5, 1, 5, '#6a5038'); R(g, x + w - 2, y - 5, 1, 5, '#6a5038'); R(g, x - 3, y - 3, 2, 3, '#5e4632'); R(g, x + w + 1, y - 3, 2, 3, '#5e4632'); break;
       case 'sofa': R(g, x, y - 7, w, 4, u.sofa); R(g, x, y - 3, w, 2, shade(u.sofa, 0.8)); R(g, x, y - 8, 1, 6, shade(u.sofa, 0.7)); R(g, x + w - 1, y - 8, 1, 6, shade(u.sofa, 0.7)); R(g, x + 1, y - 1, 1, 1, '#3a2a1a'); R(g, x + w - 2, y - 1, 1, 1, '#3a2a1a'); break;
       case 'bed': case 'mattress': {
         const head = o > 0 ? x : x + w - 1, mat = it.k === 'mattress';
@@ -876,7 +920,7 @@
       if (nbOpen(n, md)) rect(n.x0 + 2, ST - n.fh + 9, n.w - 4, n.fh - 9, n.kind === 'pharm' ? '#f4fff8' : n.kind === 'lottery' ? '#ffd0c0' : '#ffeacc', dk);
     }
     g.globalCompositeOperation = 'lighter';
-    for (const k in units) { const u = units[k], y = yF(u.f); if (u.tv > 0) gl(g, (u.it.sofa ? u.it.sofa.x + u.it.sofa.w / 2 : u.x0 + 26), y - 6, 16, '90,120,255', u.tv * dk * (0.55 + 0.35 * Math.sin(rt * 7 + u.f) * Math.sin(rt * 3.1))); if (u.desk > 0 && u.desk && u.items) { const d = u.items.find(i => i.k === 'desk'); if (d) gl(g, d.x + d.w / 2, y - 9, 12, '255,220,160', u.desk * dk * 0.9); } if (u.red > 0) { const al = u.items.find(i => i.k === 'altar'); if (al) gl(g, al.x + al.w / 2, y - 12, 10, '255,60,40', dk * 0.8); } for (const s of u.sleepers) if (s.phone) gl(g, (s.bed ? s.bed.x + 3 : u.x0 + 10), y - 7, 7, '150,200,255', dk * 0.8); }
+    for (const k in units) { const u = units[k], y = yF(u.f); if (u.tv > 0) gl(g, (u.it.sofa ? u.it.sofa.x + u.it.sofa.w / 2 : u.x0 + 26), y - 6, 16, '90,120,255', u.tv * dk * (0.55 + 0.35 * Math.sin(rt * 7 + u.f) * Math.sin(rt * 3.1))); if (u.desk > 0 && u.desk && u.items) { const d = u.items.find(i => i.k === 'desk'); if (d) gl(g, d.x + d.w / 2, y - 9, 12, '255,220,160', u.desk * dk * 0.9); } if (u.cake === 1) { const tb = u.it.table; gl(g, tb.x + 4, y - 11, 22, '255,190,110', dk * (0.95 + 0.1 * Math.sin(rt * 17))); } if (u.red > 0) { const al = u.items.find(i => i.k === 'altar'); if (al) gl(g, al.x + al.w / 2, y - 12, 10, '255,60,40', dk * 0.8); } for (const s of u.sleepers) if (s.phone) gl(g, (s.bed ? s.bed.x + 3 : u.x0 + 10), y - 7, 7, '150,200,255', dk * 0.8); }
     if (lampOn(md)) for (const l of lamps) { if (l.flick && Math.sin(rt * 23) * Math.sin(rt * 7.3) > 0.7) continue; gl(g, l.x + 6, ST - 30, 34, '255,232,190', 0.85 * dk); gl(g, l.x + 6, ST + 10, 30, '255,232,190', 0.5 * dk); }
     for (const c of cars) { const front = c.x + c.dir * (c.kind === 'bus' ? 20 : c.kind === 'scooter' ? 6 : 9); gl(g, front + c.dir * 12, c.y - 4, 14, '255,240,200', 0.7 * dk); gl(g, c.x - c.dir * 8, c.y - 4, 5, '255,40,30', 0.6 * dk); }
     for (const sg of signs) if (signLit(sg, md)) gl(g, sg.x + sg.w / 2, sg.y + sg.h / 2, Math.max(sg.w, sg.h) * 0.9, hex(sg.bg).join(','), 0.5 * dk);
@@ -940,6 +984,7 @@
       if (!delivery && st.delivDay !== day && (md > T(21, 45) || md < T(0, 40)) && st.act === 'desk' && !st.route.length && !st.away && rand() < dt * 0.006) { st.delivDay = day; delivery = spawnCar('scooter', 2, { stopX: gateX - 10, deliv: true, wait: 0, box: '#e8823a', helmet: '#2a2a2a', poncho: rain > 0.25 ? '#e85a5a' : null }); st.override = { act: 'pickup' }; }
       if (st.food > 0 && !st.route.length && st.zone === 'u') { st.food = 0; st.override = { act: 'eatIn', until: m + 18 }; }
       if (st.override && st.override.act === 'eatIn' && m > st.override.until) st.override = null; }
+    stepDramas(dt, m, md);
     for (const k in units) { const u = units[k]; u.sleepers = []; u.tvT = 0; u.deskT = 0; u.awake = 0; u.mjOn = false; u.redT = u.items.some(i => i.k === 'altar') ? 1 : 0; u.gtrOut = false; }
     for (const p of people) {
       if (p.away || p.route.length) continue;
@@ -948,9 +993,9 @@
       if (p.spot && p.spot.pose === 'lie') { u.sleepers.push({ L: p.L, bed: p.spot.bed, phone: p.spot.phone }); continue; }
       u.awake++; if (p.act === 'tv') u.tvT = 1; if (p.act === 'desk') u.deskT = 1; if (p.act === 'mj') u.mjOn = true;
     }
-    for (const k in units) { const u = units[k]; const want = u.awake > 0 ? (u.tvT && u.awake === 1 ? 0.55 : 1) : 0; u.lamp += (want - u.lamp) * Math.min(1, dt * 6); u.tv += (u.tvT - u.tv) * Math.min(1, dt * 4); u.desk += (u.deskT - u.desk) * Math.min(1, dt * 4); u.red = u.redT; }
+    for (const k in units) { const u = units[k]; const want = u.cake === 1 ? 0.08 : u.awake > 0 ? (u.tvT && u.awake === 1 ? 0.55 : 1) : 0; u.lamp += (want - u.lamp) * Math.min(1, dt * 6); u.tv += (u.tvT - u.tv) * Math.min(1, dt * 4); u.desk += (u.deskT - u.desk) * Math.min(1, dt * 4); u.red = u.redT; }
     for (let f = 0; f < 7; f++) stairLit[f] = Math.max(0, stairLit[f] - dt * 0.06);
-    if (laundryOut && rain > 0.18 && !people.some(p => p.override && p.override.act === 'laundryIn')) { const r = people.find(p => p.home && !p.away && !p.override && p.act !== 'sleep' && p.act !== 'shop' && p.act !== 'mj' && p.name !== 'kid' && p.name !== 'ama'); if (r) r.override = { act: 'laundryIn' }; }
+    if (laundryOut && rain > 0.18 && !people.some(p => p.override && p.override.act === 'laundryIn')) { const r = people.find(p => p.home && !p.away && !p.override && p.act !== 'sleep' && p.act !== 'shop' && p.act !== 'mj' && p.name !== 'kid' && p.name !== 'ama'); if (r) { r.override = { act: 'laundryIn' }; r.bub = { icon: '!', t: rt, d: 2 }; } }
     for (const p of people) if (p.override && p.override.act === 'laundryIn' && !laundryOut) p.override = null;
     // neighbours' windows keep their own hours
     for (const n of nbs) for (const wi of n.wins) {
@@ -967,7 +1012,8 @@
   function stepCats(dt, md) {
     const c = mochi, g = people.find(p => p.name === 'gtr');
     c.t += dt;
-    if (g && (g.act === 'guitar' || g.act === 'moon') && !g.route.length && !g.away) { c.tx = g.x + (g.zone === 'roof' ? -6 : 6); c.zone = g.zone; }
+    if (g && g.away) c.hearted = false;
+    if (g && (g.act === 'guitar' || g.act === 'moon') && !g.route.length && !g.away) { c.tx = g.x + (g.zone === 'roof' ? -6 : 6); c.zone = g.zone; if (!c.hearted && Math.abs(c.x - c.tx) < 1.5) { c.hearted = true; c.bub = { icon: 'heart', t: rt, d: 1.8 }; } }
     else if (c.t > 6 + rand() * 8) { c.t = 0; c.zone = rain > 0.15 ? 'u' : pick(['roof', 'roof', 'u']); c.tx = c.zone === 'roof' ? Bx0 + 4 + rand() * 44 : units['6A'].x0 + 4 + rand() * 44; }
     const dx = c.tx - c.x;
     if (Math.abs(dx) > 1) { c.x += Math.sign(dx) * 7 * dt; c.dir = Math.sign(dx); c.st = 'walk'; } else c.st = (md > T(2, 0) && md < T(9, 0)) || (g && g.act === 'sleep') ? 'sleep' : 'sit';
@@ -1021,12 +1067,29 @@
     for (const k in units) { const u = units[k]; if (u.lamp > 0.5 && dk > 0.3) gl(lc, u.x0 + 28, yF(u.f) - FH + 3, 5, u.cool ? '230,245,255' : '255,235,200', 0.5 * dk); }
     if (store) gl(lc, store.x0 + store.w / 2, ST - 8, store.w * 0.5, '230,245,255', 0.18 * dk);
     lc.globalCompositeOperation = 'source-over'; lc.globalAlpha = 1;
+    drawBubbles(lc);
     drawRain(lc, dk);
     if (lightning > 0.5) { lc.fillStyle = `rgba(230,236,255,${((lightning - 0.5) * 0.5).toFixed(3)})`; lc.fillRect(0, 0, AW, AH); }
     // up to the screen, every pixel a hard square
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(lo, 0, 0, AW * S, AH * S);
     drawSigns(md, dk);
+  }
+  const ICONS = {
+    heart: ['#e8507a', '.x.x.', 'xxxxx', 'xxxxx', '.xxx.', '..x..'], '!': ['#d03a3a', '..x..', '..x..', '..x..', '.....', '..x..'], '?': ['#3a5aa0', '.xxx.', '...x.', '..x..', '.....', '..x..'],
+    chat: ['#3a3a48', '.....', '.....', 'x.x.x', '.....', '.....'], hi: ['#3a3a48', '.....', '.x.x.', '.....', 'x...x', '.xxx.'], ha: ['#3a3a48', '.x.x.', '.....', 'xxxxx', 'x...x', '.xxx.'],
+    bowl: ['#d08a3a', '.x.x.', '.....', 'xxxxx', 'xxxxx', '.xxx.'], cake: ['#e86a9a', '..x..', '..x..', 'xxxxx', 'x.x.x', 'xxxxx'], note: ['#3a3a48', '..xx.', '..x.x', '..x..', 'xxx..', 'xx...']
+  };
+  function drawBubbles(g) {
+    const list = people.filter(p => p.bub && !p.away && rt >= p.bub.t && rt - p.bub.t < p.bub.d && p.pose !== 'lie');
+    if (mochi.bub && rt - mochi.bub.t < mochi.bub.d) list.push({ x: mochi.x, y: mochi.y, L: { h: 5 }, bub: mochi.bub });
+    for (const p of list) {
+      const ic = ICONS[p.bub.icon]; if (!ic) continue;
+      const x0 = clamp(Math.round(p.x) - 4, 1, AW - 10), y0 = Math.round(p.y) - p.L.h - 11 - (p.pose === 'sit' || p.pose === 'sitf' ? -1 : 0);
+      g.globalAlpha = 1; g.fillStyle = '#2a2a38'; g.fillRect(x0 + 1, y0, 7, 9); g.fillRect(x0, y0 + 1, 9, 7); g.fillRect(Math.round(p.x), y0 + 9, 1, 1);
+      g.fillStyle = '#fbfaf4'; g.fillRect(x0 + 1, y0 + 1, 7, 7);
+      g.fillStyle = ic[0]; for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) if (ic[r + 1][c] === 'x') g.fillRect(x0 + 2 + c, y0 + 2 + r, 1, 1);
+    }
   }
   function signSprite(sg) {
     const w = sg.w * S, h = sg.h * S; const [c, g] = mkC(); c.width = w; c.height = h;
@@ -1098,6 +1161,8 @@
       else if (name === 'toss') noise(t, 0.18, 'lowpass', 600, 0.12, 0.7, pn);
       else if (name === 'door') { noise(t, 0.08, 'bandpass', 1200, 0.08, 2, pn); noise(t + 0.25, 0.12, 'lowpass', 500, 0.1, 1, pn); }
       else if (name === 'start') { const o = tone(70, t, 0.6, 0.05, 'sawtooth', out, pn); o.frequency.linearRampToValueAtTime(130, t + 0.5); }
+      else if (name === 'blip') { const o = tone(1500, t, 0.05, 0.012, 'sine', out, pn); o.frequency.exponentialRampToValueAtTime(2100, t + 0.05); }
+      else if (name === 'bday') { const HB = [[67, 0.75], [67, 0.25], [69, 1], [67, 1], [72, 1], [71, 2], [67, 0.75], [67, 0.25], [69, 1], [67, 1], [74, 1], [72, 2], [67, 0.75], [67, 0.25], [79, 1], [76, 1], [72, 1], [71, 1], [69, 2], [77, 0.75], [77, 0.25], [76, 1], [72, 1], [74, 1], [72, 3]]; let tt = t + 0.3; for (const [m, n] of HB) { tone(mtof(m + 12), tt, 0.5 * n + 0.3, 0.05, 'sine', out, pn); tone(mtof(m + 24), tt, 0.25, 0.012, 'sine', out, pn); tt += 0.42 * n; } }
       else if (name === 'thunder') { noise(t + 0.6 + Math.random() * 1.5, 3.5, 'lowpass', 110, 0.5, 0.6, pn); noise(t + 0.5, 0.6, 'lowpass', 300, 0.25, 0.6, pn); }
     };
     self.update = (dt, md) => {
@@ -1179,6 +1244,7 @@
     who: () => people.map(p => `${p.name}:${p.act}:${p.zone}${p.route.length ? '~' : ''}`).join(' '),
     dbg: n => { const p = people.find(q => q.name === n); return JSON.stringify({ x: p.x, y: p.y, zone: p.zone, f: p.f, act: p.act, unit: p.unit && p.unit.key, route: p.route, spot: p.spot && { zone: p.spot.zone, x: p.spot.x, y: p.spot.y, f: p.spot.f }, wr: p.waitRide, away: p.away }); },
     tdbg: () => truck ? JSON.stringify({ x: Math.round(truck.x), v: truck.v.toFixed(1), at: truck.atStop, w: truck.wait.toFixed(1), done: truck.done, ahead: cars.filter(c => c.lane === 2 && c.kind !== 'scooter' && c !== truck && c.x > truck.x).map(c => c.kind + '@' + Math.round(c.x) + ':' + c.v.toFixed(1) + (c.atStop ? 'S' : '') + (c.ride ? c.ride.name : '')).join(','), waiting: people.filter(p => p.override && p.override.act === 'trash').map(p => p.name + ':' + p.zone + ':' + p.route.length + (p.override.tossed ? 'T' : '')).join(',') }) : '',
+    drama: () => { drama = { ph: 'argue', t: 0, k: -1 }; }, bday: () => JSON.stringify(bday), bub: () => people.filter(p => p.bub && rt - p.bub.t < p.bub.d).map(p => p.name + ':' + p.bub.icon).join(' '),
     setRain: v => { rain = rainT = v; nextWx = now() + 120; }, cars: () => cars.length, peds: () => peds.length, snd, truck: () => !!truck
   };
   requestAnimationFrame(frame);
