@@ -493,6 +493,24 @@
     if (p.pose === 'guitar' && snd.on && rand() < dt * 0.7) parts.push({ type: 'note', x: p.x + 4, y: p.y - 12, vx: J(2) + 1, vy: -4, t: 0, life: 2.6, col: '#f0e0a0' });
   }
   let drama = null, dramaDay = -1, bday = null, bdayDay = -1;
+  let PW = 1, cut = 0, cutEnd = -99, lastCut = -999, quake = 0, nextQuake = START + 180 + Math.random() * 900;
+  const QJ = () => quake > 0 && rand() < 0.55 * Math.min(1, quake / 2) ? (rand() < 0.5 ? -1 : 1) : 0;
+  function stepShocks(dt, m) {
+    // Taiwan shakes a little most weeks: things rattle, everybody looks up, a scooter alarm goes off after
+    if (m > nextQuake && quake <= 0) {
+      quake = 5.5; nextQuake = m + 600 + rand() * 2400; snd.ev('quake', AW / 2);
+      for (const p of people) { if (p.away || p.act === 'sleep') continue; p.bub = { icon: p.name === 'kid' ? '?' : '!', t: rt + rand() * 0.6, d: 2.2 }; if (p.route.length) p.pause = 3; }
+      mochi.bub = { icon: '!', t: rt, d: 2 }; mochi.tx = mochi.zone === 'roof' ? Bx0 + 4 : units['6A'].x0 + 6; for (const c of strays) { c.st = 'walk'; c.tx = c.x < AW / 2 ? -6 : AW + 6; }
+    }
+    if (quake > 0) { quake -= dt; if (quake <= 0) snd.ev('alarm', parked.length ? parked[Math.floor(rand() * parked.length)].x : AW / 2); }
+    // in a heavy storm the power sometimes goes for half a minute
+    if (cut <= 0 && rain > 0.85 && dark() > 0.35 && rt - lastCut > 150 && rand() < dt * 0.008) {
+      cut = 18 + rand() * 25; lastCut = rt; snd.ev('cut', AW / 2);
+      for (const p of people) if (!p.away && p.act !== 'sleep' && rand() < 0.8) p.bub = { icon: '!', t: rt + rand() * 0.8, d: 1.8 };
+    }
+    if (cut > 0) { cut -= dt; PW = lastCut > rt - 0.6 ? (rand() < 0.5 ? 1 : 0) : 0; if (cut <= 0) cutEnd = rt; }
+    else PW = rt - cutEnd < 1.3 ? (rand() < 0.7 ? 1 : 0.15) : 1;
+  }
   function stepDramas(dt, m, md) {
     const day = Math.floor(m / 1440), by = n => people.find(q => q.name === n);
     // the couple in 2B: some nights a fight, a cooling off on opposite sides of the room, then a hug
@@ -663,8 +681,9 @@
   function R(g, x, y, w, h, c) { g.fillStyle = c; g.fillRect(x, y, w, h); }
   function disc(g, cx0, cy0, r, c) { g.fillStyle = c; for (let yy = -r; yy <= r; yy++) { const w = Math.floor(Math.sqrt(r * r - yy * yy + r * 0.6)); g.fillRect(cx0 - w, cy0 + yy, w * 2 + 1, 1); } }
   function blob(g, x0, y0, w, h) { for (let j = 0; j < h; j++) { const t = (j + 0.5) / h * 2 - 1, ww = Math.round(w * Math.sqrt(Math.max(0, 1 - t * t))); g.fillRect(Math.round(x0 + (w - ww) / 2), y0 + j, ww, 1); } }
+  const RATTLE = { plant: 1, boxes: 1, kettle: 1, cage: 1, shelf: 1, stove: 1, gstand: 1, mfridge: 1, altar: 1 };
   function drawItem(g, it, u, y) {
-    const x = it.x, w = it.w, o = it.o;
+    const x = it.x + (RATTLE[it.k] ? QJ() : 0), w = it.w, o = it.o;
     switch (it.k) {
       case 'fridge': R(g, x, y - 13, w, 13, '#dfe3e6'); R(g, x, y - 9, w, 1, '#b4b9bd'); R(g, x + (o > 0 ? w - 1 : 0), y - 12, 1, 2, '#8a8f93'); break;
       case 'mfridge': R(g, x, y - 7, w, 7, '#e2e4e6'); R(g, x, y - 7, w, 1, '#c4c8cc'); break;
@@ -769,7 +788,7 @@
     // potted plants, the laundry line, a plastic chair
     R(g, Bx0 + 34, roofY - 4, 4, 4, '#a0603a'); R(g, Bx0 + 33, roofY - 9, 6, 5, '#4f7f4a'); R(g, Bx0 + 41, roofY - 3, 3, 3, '#a0603a'); R(g, Bx0 + 40, roofY - 7, 5, 4, '#5f8f4a');
     R(g, Bx0 + 10, roofY - 18, 1, 18, '#7a7a7a'); R(g, Bx0 + 46, roofY - 18, 1, 18, '#7a7a7a'); R(g, Bx0 + 10, roofY - 18, 37, 1, '#9a9a9a');
-    if (laundryOut) { const k = laundryOut ? 1 : 0; void k; ['#e8e4dc', '#7fb3c8', '#f2f2f2', '#c76b98', '#2b3447', '#d9a441', '#e8e4dc'].forEach((c, i) => { const sw = Math.round(Math.sin(rt * 2 + i) * wind * 2); R(g, Bx0 + 12 + i * 5 + sw, roofY - 17, 4, 5 + (i % 2), c); }); }
+    if (laundryOut) { const k = laundryOut ? 1 : 0; void k; ['#e8e4dc', '#7fb3c8', '#f2f2f2', '#c76b98', '#2b3447', '#d9a441', '#e8e4dc'].forEach((c, i) => { const sw = Math.round(Math.sin(rt * (quake > 0 ? 9 : 2) + i) * Math.max(wind, quake > 0 ? 1 : 0) * 2); R(g, Bx0 + 12 + i * 5 + sw, roofY - 17, 4, 5 + (i % 2), c); }); }
     R(g, Bx0 + 28, roofY - 4, 5, 1, '#e0e0e0'); R(g, Bx0 + 28, roofY - 3, 1, 3, '#e0e0e0'); R(g, Bx0 + 32, roofY - 3, 1, 3, '#e0e0e0'); R(g, Bx0 + 32, roofY - 7, 1, 3, '#e0e0e0');
   }
   function drawNbsDynamic(g, md) {
@@ -830,7 +849,7 @@
     R(g, x0 + 18, top, 1, ST - top, '#b8c0c0'); R(g, x0 + w - 1, top, 1, ST - top, '#b8c0c0');
   }
   function drawCram(g, n, md) {
-    const y = ST - 2 * n.fh - 19, x0 = n.x0 + 6, w = n.w - 22, on = cramOn(md);
+    const y = ST - 2 * n.fh - 19, x0 = n.x0 + 6, w = n.w - 22, on = cramOn(md) && PW > 0.5;
     R(g, x0, y, w, 13, on ? '#f6fbff' : '#39424f');
     if (on) {
       R(g, x0 + 2, y + 2, 14, 6, '#ffffff'); R(g, x0 + 2, y + 2, 14, 1, '#9aa0a6');
@@ -908,22 +927,25 @@
     const g = lx, a = ambient();
     g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1; g.fillStyle = css(a); g.fillRect(0, 0, AW, AH);
     if (lightning > 0) { g.globalAlpha = lightning * 0.8; g.fillStyle = '#ffffff'; g.fillRect(0, 0, AW, AH); g.globalAlpha = 1; }
+    const de = dk * PW;
     const rect = (x, y, w, h, c, al) => { if (al <= 0.01) return; g.globalAlpha = al; g.fillStyle = c; g.fillRect(x, y, w, h); };
-    for (const k in units) { const u = units[k]; const y = yF(u.f), top = y - FH + 2; rect(u.x0, top, UW, FH - 2, u.cool ? '#eef6ff' : '#ffe8c6', u.lamp * dk); }
-    for (let f = 0; f <= 5; f++) rect(sx0, yF(f) - FH + 2, STW, FH - 2, '#e8f2ff', stairLit[f] * dk * 0.9);
-    rect(Ax0, ST - FH + 2, UW, FH, '#fff0d8', shopA.open * dk); rect(Bx0, ST - FH + 2, UW, FH, '#f4fff8', shopB.open * dk);
+    for (const k in units) { const u = units[k]; const y = yF(u.f), top = y - FH + 2; rect(u.x0, top, UW, FH - 2, u.cool ? '#eef6ff' : '#ffe8c6', u.lamp * de); }
+    for (let f = 0; f <= 5; f++) rect(sx0, yF(f) - FH + 2, STW, FH - 2, '#e8f2ff', stairLit[f] * de * 0.9);
+    rect(Ax0, ST - FH + 2, UW, FH, '#fff0d8', shopA.open * de); rect(Bx0, ST - FH + 2, UW, FH, '#f4fff8', shopB.open * de);
     for (const n of nbs) {
-      for (const wi of n.wins) if (wi.lit) rect(wi.x, wi.y, wi.w, wi.h, wi.warm ? '#fff0d8' : '#eef6ff', dk);
-      if (n.kind === 'store') rect(n.x0, ST - n.fh + 8, n.w, n.fh - 8, '#ffffff', dk);
-      if (n.kind === 'cram') { if (cramOn(md)) rect(n.x0 + 6, ST - 2 * n.fh - 19, n.w - 22, 13, '#ffffff', dk); if (noodleOpen(md)) rect(n.x0 + 4, ST - n.fh + 9, n.w - 8, n.fh - 9, '#ffe8c8', dk); }
-      if (n.kind === 'temple') rect(n.x0, ST - 26, n.w, 26, '#ff9a7a', dk * 0.7);
-      if (nbOpen(n, md)) rect(n.x0 + 2, ST - n.fh + 9, n.w - 4, n.fh - 9, n.kind === 'pharm' ? '#f4fff8' : n.kind === 'lottery' ? '#ffd0c0' : '#ffeacc', dk);
+      for (const wi of n.wins) if (wi.lit) rect(wi.x, wi.y, wi.w, wi.h, wi.warm ? '#fff0d8' : '#eef6ff', de);
+      if (n.kind === 'store') rect(n.x0, ST - n.fh + 8, n.w, n.fh - 8, '#ffffff', de);
+      if (n.kind === 'cram') { if (cramOn(md)) rect(n.x0 + 6, ST - 2 * n.fh - 19, n.w - 22, 13, '#ffffff', de); if (noodleOpen(md)) rect(n.x0 + 4, ST - n.fh + 9, n.w - 8, n.fh - 9, '#ffe8c8', de); }
+      if (n.kind === 'temple') rect(n.x0, ST - 26, n.w, 26, '#ff9a7a', de * 0.7);
+      if (nbOpen(n, md)) rect(n.x0 + 2, ST - n.fh + 9, n.w - 4, n.fh - 9, n.kind === 'pharm' ? '#f4fff8' : n.kind === 'lottery' ? '#ffd0c0' : '#ffeacc', de);
     }
     g.globalCompositeOperation = 'lighter';
-    for (const k in units) { const u = units[k], y = yF(u.f); if (u.tv > 0) gl(g, (u.it.sofa ? u.it.sofa.x + u.it.sofa.w / 2 : u.x0 + 26), y - 6, 16, '90,120,255', u.tv * dk * (0.55 + 0.35 * Math.sin(rt * 7 + u.f) * Math.sin(rt * 3.1))); if (u.desk > 0 && u.desk && u.items) { const d = u.items.find(i => i.k === 'desk'); if (d) gl(g, d.x + d.w / 2, y - 9, 12, '255,220,160', u.desk * dk * 0.9); } if (u.cake === 1) { const tb = u.it.table; gl(g, tb.x + 4, y - 11, 22, '255,190,110', dk * (0.95 + 0.1 * Math.sin(rt * 17))); } if (u.red > 0) { const al = u.items.find(i => i.k === 'altar'); if (al) gl(g, al.x + al.w / 2, y - 12, 10, '255,60,40', dk * 0.8); } for (const s of u.sleepers) if (s.phone) gl(g, (s.bed ? s.bed.x + 3 : u.x0 + 10), y - 7, 7, '150,200,255', dk * 0.8); }
-    if (lampOn(md)) for (const l of lamps) { if (l.flick && Math.sin(rt * 23) * Math.sin(rt * 7.3) > 0.7) continue; gl(g, l.x + 6, ST - 30, 34, '255,232,190', 0.85 * dk); gl(g, l.x + 6, ST + 10, 30, '255,232,190', 0.5 * dk); }
+    for (const k in units) { const u = units[k], y = yF(u.f); if (u.tv > 0) gl(g, (u.it.sofa ? u.it.sofa.x + u.it.sofa.w / 2 : u.x0 + 26), y - 6, 16, '90,120,255', u.tv * de * (0.55 + 0.35 * Math.sin(rt * 7 + u.f) * Math.sin(rt * 3.1))); if (u.desk > 0 && u.desk && u.items) { const d = u.items.find(i => i.k === 'desk'); if (d) gl(g, d.x + d.w / 2, y - 9, 12, '255,220,160', u.desk * de * 0.9); } if (u.cake === 1) { const tb = u.it.table; gl(g, tb.x + 4, y - 11, 22, '255,190,110', de * (0.95 + 0.1 * Math.sin(rt * 17))); } if (u.red > 0) { const al = u.items.find(i => i.k === 'altar'); if (al) gl(g, al.x + al.w / 2, y - 12, 10, '255,60,40', de * 0.8); } for (const s of u.sleepers) if (s.phone) gl(g, (s.bed ? s.bed.x + 3 : u.x0 + 10), y - 7, 7, '150,200,255', de * 0.8); }
+    if (lampOn(md)) for (const l of lamps) { if (l.flick && Math.sin(rt * 23) * Math.sin(rt * 7.3) > 0.7) continue; gl(g, l.x + 6, ST - 30, 34, '255,232,190', 0.85 * de); gl(g, l.x + 6, ST + 10, 30, '255,232,190', 0.5 * de); }
     for (const c of cars) { const front = c.x + c.dir * (c.kind === 'bus' ? 20 : c.kind === 'scooter' ? 6 : 9); gl(g, front + c.dir * 12, c.y - 4, 14, '255,240,200', 0.7 * dk); gl(g, c.x - c.dir * 8, c.y - 4, 5, '255,40,30', 0.6 * dk); }
-    for (const sg of signs) if (signLit(sg, md)) gl(g, sg.x + sg.w / 2, sg.y + sg.h / 2, Math.max(sg.w, sg.h) * 0.9, hex(sg.bg).join(','), 0.5 * dk);
+    for (const sg of signs) if (signLit(sg, md)) gl(g, sg.x + sg.w / 2, sg.y + sg.h / 2, Math.max(sg.w, sg.h) * 0.9, hex(sg.bg).join(','), 0.5 * de);
+    // when the power is out, phones come on in the dark rooms
+    if (PW < 0.6) for (const p of people) { if (p.away || p.zone !== 'u' || p.pose === 'lie') continue; gl(g, p.x + p.dir * 4, p.y - 6, 12, '235,242,255', (1 - PW) * dk * 0.9); }
     g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
   }
   const signLit = (sg, md) => sg.lit[0] <= sg.lit[1] ? md >= sg.lit[0] && md <= sg.lit[1] : md >= sg.lit[0] || md <= sg.lit[1];
@@ -984,7 +1006,7 @@
       if (!delivery && st.delivDay !== day && (md > T(21, 45) || md < T(0, 40)) && st.act === 'desk' && !st.route.length && !st.away && rand() < dt * 0.006) { st.delivDay = day; delivery = spawnCar('scooter', 2, { stopX: gateX - 10, deliv: true, wait: 0, box: '#e8823a', helmet: '#2a2a2a', poncho: rain > 0.25 ? '#e85a5a' : null }); st.override = { act: 'pickup' }; }
       if (st.food > 0 && !st.route.length && st.zone === 'u') { st.food = 0; st.override = { act: 'eatIn', until: m + 18 }; }
       if (st.override && st.override.act === 'eatIn' && m > st.override.until) st.override = null; }
-    stepDramas(dt, m, md);
+    stepDramas(dt, m, md); stepShocks(dt, m);
     for (const k in units) { const u = units[k]; u.sleepers = []; u.tvT = 0; u.deskT = 0; u.awake = 0; u.mjOn = false; u.redT = u.items.some(i => i.k === 'altar') ? 1 : 0; u.gtrOut = false; }
     for (const p of people) {
       if (p.away || p.route.length) continue;
@@ -993,14 +1015,14 @@
       if (p.spot && p.spot.pose === 'lie') { u.sleepers.push({ L: p.L, bed: p.spot.bed, phone: p.spot.phone }); continue; }
       u.awake++; if (p.act === 'tv') u.tvT = 1; if (p.act === 'desk') u.deskT = 1; if (p.act === 'mj') u.mjOn = true;
     }
-    for (const k in units) { const u = units[k]; const want = u.cake === 1 ? 0.08 : u.awake > 0 ? (u.tvT && u.awake === 1 ? 0.55 : 1) : 0; u.lamp += (want - u.lamp) * Math.min(1, dt * 6); u.tv += (u.tvT - u.tv) * Math.min(1, dt * 4); u.desk += (u.deskT - u.desk) * Math.min(1, dt * 4); u.red = u.redT; }
+    for (const k in units) { const u = units[k]; const want = (u.cake === 1 ? 0.08 : u.awake > 0 ? (u.tvT && u.awake === 1 ? 0.55 : 1) : 0) * PW; if (PW < 0.5) { u.tvT = 0; u.deskT = 0; } u.lamp += (want - u.lamp) * Math.min(1, dt * 6); u.tv += (u.tvT - u.tv) * Math.min(1, dt * 4); u.desk += (u.deskT - u.desk) * Math.min(1, dt * 4); u.red = u.redT; }
     for (let f = 0; f < 7; f++) stairLit[f] = Math.max(0, stairLit[f] - dt * 0.06);
     if (laundryOut && rain > 0.18 && !people.some(p => p.override && p.override.act === 'laundryIn')) { const r = people.find(p => p.home && !p.away && !p.override && p.act !== 'sleep' && p.act !== 'shop' && p.act !== 'mj' && p.name !== 'kid' && p.name !== 'ama'); if (r) { r.override = { act: 'laundryIn' }; r.bub = { icon: '!', t: rt, d: 2 }; } }
     for (const p of people) if (p.override && p.override.act === 'laundryIn' && !laundryOut) p.override = null;
     // neighbours' windows keep their own hours
     for (const n of nbs) for (const wi of n.wins) {
       if (wi.day !== Math.floor(m / 1440)) { wi.day = Math.floor(m / 1440); wi.on = [[T(17, 30) + rand() * 200, T(21, 50) + rand() * 200], rand() < 0.4 ? [T(5, 40) + rand() * 60, T(7, 30) + rand() * 60] : [0, 0], rand() < 0.12 ? [0, T(1, 0) + rand() * 180] : [0, 0]]; wi.silOn = rand() < 0.5; }
-      wi.lit = wi.on.some(([a, b]) => md >= a && md <= b) && dk > 0.2;
+      wi.lit = wi.on.some(([a, b]) => md >= a && md <= b) && dk > 0.2 && PW > 0.5;
     }
     // particles
     for (const q of parts) { q.t += dt; q.x += q.vx * dt; q.y += q.vy * dt; if (q.type === 'bag') q.vy += 40 * dt; }
@@ -1030,7 +1052,7 @@
     drawNbsDynamic(wx, md);
     drawBuilding(wx);
     // people inside, by floor
-    const extra = p => ({ carry: p.override && p.override.act === 'trash' && !p.override.thrown ? p.override.bag : p.food > 0 && p.route.length ? '#f4f0e6' : null, hat: p.name === 'kid' && md > T(6, 30) && md < T(17, 30) && p.route.length > 0 });
+    const extra = p => ({ carry: p.override && p.override.act === 'trash' && !p.override.thrown ? p.override.bag : p.food > 0 && p.route.length ? '#f4f0e6' : null, hat: p.name === 'kid' && md > T(6, 30) && md < T(17, 30) && p.route.length > 0, phone: PW < 0.6 && p.zone === 'u' && p.act !== 'sleep' });
     for (const p of people) { if (p.away || p.zone === 'street' || p.zone === 'store') continue; if (p.pose === 'lie' && !p.route.length) continue; person(wx, p.x, p.y, p.L, p.pose, p.dir, Math.floor(p.walkD / 2.5) + (p.pose !== 'walk' ? Math.floor(rt * 6) : 0), extra(p)); }
     const mc = mochi; cat(wx, mc.x, mc.y, '#e8e2d6', mc.st, mc.dir, Math.floor(mc.t * 4));
     for (const p of people) if (p.zone === 'store' && !p.away) person(wx, p.x, p.y, p.L, p.pose, p.dir, Math.floor(p.walkD / 2.5));
@@ -1061,11 +1083,12 @@
     drawSky(lc, md, dk);
     lc.drawImage(wc, 0, 0);
     lc.globalCompositeOperation = 'lighter';
-    if (lampOn(md)) for (const l of lamps) gl(lc, l.x + 6, ST - 39, 6, '255,240,210', 0.9 * dk);
+    const de = dk * PW;
+    if (lampOn(md)) for (const l of lamps) gl(lc, l.x + 6, ST - 39, 6, '255,240,210', 0.9 * de);
     for (const c of cars) { const front = c.x + c.dir * (c.kind === 'bus' ? 20 : c.kind === 'scooter' ? 6 : 9); gl(lc, front + c.dir * 2, c.y - 4, 3, '255,248,220', 0.45 * dk); if (wet > 0.3) { lc.globalAlpha = 0.22 * wet * dk; lc.fillStyle = '#fff0c8'; lc.fillRect(Math.round(front + c.dir * 3) - 1, Math.round(c.y) + 2, 3, 1); lc.fillRect(Math.round(front + c.dir * 3), Math.round(c.y) + 4, 1, 2); } }
-    for (const sg of signs) if (signLit(sg, md)) { gl(lc, sg.x + sg.w / 2, sg.y + sg.h / 2, Math.max(sg.w, sg.h) * 0.75, hex(sg.bg).join(','), 0.35 * dk); if (wet > 0.3 && sg.y > ST - 40) gl(lc, sg.x + sg.w / 2, ST + 14, sg.w * 0.5, hex(sg.bg).join(','), 0.25 * wet * dk); }
-    for (const k in units) { const u = units[k]; if (u.lamp > 0.5 && dk > 0.3) gl(lc, u.x0 + 28, yF(u.f) - FH + 3, 5, u.cool ? '230,245,255' : '255,235,200', 0.5 * dk); }
-    if (store) gl(lc, store.x0 + store.w / 2, ST - 8, store.w * 0.5, '230,245,255', 0.18 * dk);
+    for (const sg of signs) if (signLit(sg, md)) { gl(lc, sg.x + sg.w / 2, sg.y + sg.h / 2, Math.max(sg.w, sg.h) * 0.75, hex(sg.bg).join(','), 0.35 * de); if (wet > 0.3 && sg.y > ST - 40) gl(lc, sg.x + sg.w / 2, ST + 14, sg.w * 0.5, hex(sg.bg).join(','), 0.25 * wet * de); }
+    for (const k in units) { const u = units[k]; if (u.lamp > 0.5 && dk > 0.3) gl(lc, u.x0 + 28, yF(u.f) - FH + 3, 5, u.cool ? '230,245,255' : '255,235,200', 0.5 * de); }
+    if (store) gl(lc, store.x0 + store.w / 2, ST - 8, store.w * 0.5, '230,245,255', 0.18 * de);
     lc.globalCompositeOperation = 'source-over'; lc.globalAlpha = 1;
     drawBubbles(lc);
     drawRain(lc, dk);
@@ -1083,10 +1106,14 @@
   function drawBubbles(g) {
     const list = people.filter(p => p.bub && !p.away && rt >= p.bub.t && rt - p.bub.t < p.bub.d && p.pose !== 'lie');
     if (mochi.bub && rt - mochi.bub.t < mochi.bub.d) list.push({ x: mochi.x, y: mochi.y, L: { h: 5 }, bub: mochi.bub });
+    const placed = [];
+    list.sort((a, b) => a.x - b.x);
     for (const p of list) {
       const ic = ICONS[p.bub.icon]; if (!ic) continue;
-      const x0 = clamp(Math.round(p.x) - 4, 1, AW - 10), y0 = Math.round(p.y) - p.L.h - 11 - (p.pose === 'sit' || p.pose === 'sitf' ? -1 : 0);
-      g.globalAlpha = 1; g.fillStyle = '#2a2a38'; g.fillRect(x0 + 1, y0, 7, 9); g.fillRect(x0, y0 + 1, 9, 7); g.fillRect(Math.round(p.x), y0 + 9, 1, 1);
+      let x0 = clamp(Math.round(p.x) - 4, 1, AW - 10); const y0 = Math.round(p.y) - p.L.h - 11 - (p.pose === 'sit' || p.pose === 'sitf' ? -1 : 0);
+      for (const q of placed) if (Math.abs(q[1] - y0) < 9 && x0 < q[0] + 10 && x0 > q[0] - 10) x0 = q[0] + 10 > AW - 10 ? q[0] - 10 : q[0] + 10;
+      placed.push([x0, y0]);
+      g.globalAlpha = 1; g.fillStyle = '#2a2a38'; g.fillRect(x0 + 1, y0, 7, 9); g.fillRect(x0, y0 + 1, 9, 7); g.fillRect(clamp(Math.round(p.x), x0 + 1, x0 + 7), y0 + 9, 1, 1);
       g.fillStyle = '#fbfaf4'; g.fillRect(x0 + 1, y0 + 1, 7, 7);
       g.fillStyle = ic[0]; for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) if (ic[r + 1][c] === 'x') g.fillRect(x0 + 2 + c, y0 + 2 + r, 1, 1);
     }
@@ -1106,7 +1133,7 @@
     const amb = ambient(), shadeK = (amb[0] + amb[1] + amb[2]) / 765;
     for (const sg of signs) {
       if (!sg.spr || sg.sprS !== S) { sg.spr = signSprite(sg); sg.sprS = S; }
-      const lit = signLit(sg, md);
+      const lit = signLit(sg, md) && PW > 0.5;
       ctx.globalAlpha = 1; ctx.drawImage(sg.spr, Math.round(sg.x * S), Math.round(sg.y * S));
       if (!lit || dk < 0.2) { ctx.globalAlpha = (1 - Math.max(shadeK, lit ? 0.9 : 0)) * 0.85; ctx.fillStyle = css(mixc(amb, [10, 12, 30], 0.6)); ctx.fillRect(Math.round(sg.x * S), Math.round(sg.y * S), sg.w * S, sg.h * S); }
     }
@@ -1118,6 +1145,7 @@
     let ac = null, out = null, rev = null, nbuf = null, rainG = null, rainLo = null, humG = null, tvG = null, gtrBus = null, gtrPan = null, truckBus = null, truckPan = null;
     const self = { on: false };
     const voices = new Map(); const ksCache = {};
+    let radioBus = null, radioNext = 0, radioStep = 0, radioMel = 3, birdCage = 0;
     let truckNext = 0, truckI = 0, gtrNext = 0, gtrStep = 0, gtrBar = 0, gtrProg = 0, gtrPause = 0, mjNext = 0, birdNext = 0, frogNext = 0, dripNext = 0, bellDay = -1, tvNext = 0;
     const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
     const pan = x => clamp((x - AW / 2) / (AW * 0.6), -0.9, 0.9);
@@ -1163,6 +1191,9 @@
       else if (name === 'start') { const o = tone(70, t, 0.6, 0.05, 'sawtooth', out, pn); o.frequency.linearRampToValueAtTime(130, t + 0.5); }
       else if (name === 'blip') { const o = tone(1500, t, 0.05, 0.012, 'sine', out, pn); o.frequency.exponentialRampToValueAtTime(2100, t + 0.05); }
       else if (name === 'bday') { const HB = [[67, 0.75], [67, 0.25], [69, 1], [67, 1], [72, 1], [71, 2], [67, 0.75], [67, 0.25], [69, 1], [67, 1], [74, 1], [72, 2], [67, 0.75], [67, 0.25], [79, 1], [76, 1], [72, 1], [71, 1], [69, 2], [77, 0.75], [77, 0.25], [76, 1], [72, 1], [74, 1], [72, 3]]; let tt = t + 0.3; for (const [m, n] of HB) { tone(mtof(m + 12), tt, 0.5 * n + 0.3, 0.05, 'sine', out, pn); tone(mtof(m + 24), tt, 0.25, 0.012, 'sine', out, pn); tt += 0.42 * n; } }
+      else if (name === 'quake') { noise(t, 6, 'lowpass', 70, 0.5, 0.7, 0); noise(t + 0.2, 5, 'lowpass', 160, 0.18, 0.7, 0); for (let i = 0; i < 40; i++) noise(t + 0.3 + Math.random() * 4.6, 0.04, 'bandpass', 1800 + Math.random() * 2600, 0.05 + Math.random() * 0.05, 3, J(0.8)); for (let i = 0; i < 6; i++) tone(2600 + Math.random() * 1800, t + 0.5 + Math.random() * 4, 0.12, 0.012, 'triangle', out, J(0.8)); }
+      else if (name === 'alarm') { for (let i = 0; i < 14; i++) { tone(i % 2 ? 1250 : 980, t + i * 0.22, 0.18, 0.018, 'square', out, pn); } }
+      else if (name === 'cut') { noise(t, 0.25, 'lowpass', 300, 0.12, 0.7, 0); const o = tone(120, t, 0.6, 0.02, 'sawtooth', out, 0); o.frequency.exponentialRampToValueAtTime(40, t + 0.5); }
       else if (name === 'thunder') { noise(t + 0.6 + Math.random() * 1.5, 3.5, 'lowpass', 110, 0.5, 0.6, pn); noise(t + 0.5, 0.6, 'lowpass', 300, 0.25, 0.6, pn); }
     };
     self.update = (dt, md) => {
@@ -1170,7 +1201,24 @@
       const t = ac.currentTime, dk = dark();
       if (!self.an) { self.an = ac.createAnalyser(); self.an.fftSize = 2048; out.connect(self.an); }
       rainG.gain.setTargetAtTime(0.16 * Math.pow(rain, 1.1), t, 0.5); rainLo.gain.setTargetAtTime(0.25 * rain * rain, t, 0.5);
-      humG.gain.setTargetAtTime(0.03 + 0.012 * trafficRate(now()), t, 1);
+      humG.gain.setTargetAtTime((0.03 + 0.012 * trafficRate(now())) * (0.35 + 0.65 * PW), t, 0.3);
+      // the breakfast shop's radio, soft oldies through a small speaker
+      if (!radioBus) { radioBus = ac.createGain(); radioBus.gain.value = 0; const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1100; bp.Q.value = 0.6; const rp = ac.createStereoPanner ? ac.createStereoPanner() : ac.createGain(); if (rp.pan) rp.pan.value = pan(Ax0 + 30); radioBus.connect(bp); bp.connect(rp); rp.connect(out); }
+      const radioOn = shopA.open > 0.6 && PW > 0.5 && md > T(5, 30) && md < T(10, 40);
+      radioBus.gain.setTargetAtTime(radioOn ? 0.5 : 0, t, 0.6);
+      if (radioOn) {
+        if (radioNext < t) radioNext = t + 0.1;
+        while (radioNext < t + 0.4) {
+          const beat = 0.62, CHD = [[60, 64, 67], [57, 60, 64], [53, 57, 60], [55, 59, 62]], ch = CHD[Math.floor(radioStep / 8) % 4], i = radioStep % 8;
+          if (i % 2 === 0) tone(mtof(ch[0] - 12), radioNext, 0.5, 0.05, 'triangle', radioBus);
+          if (i === 1 || i === 5) for (const n of ch) tone(mtof(n), radioNext, 0.4, 0.018, 'triangle', radioBus);
+          if (Math.random() < 0.55) { radioMel = clamp(radioMel + Math.floor(Math.random() * 5) - 2, 0, 7); tone(mtof([72, 74, 76, 79, 81, 84, 86, 88][radioMel]), radioNext, 0.5, 0.03, 'sine', radioBus); }
+          radioNext += beat / 2; radioStep++;
+        }
+      }
+      // the old man's songbird
+      const om = people.find(q => q.name === 'old');
+      if (om && om.act === 'cage' && !om.route.length && !om.away && t > birdCage) { birdCage = t + 0.6 + Math.random() * 2.5; const f = 2800 + Math.random() * 1400, pn2 = pan(units['5A'].x0 + 30); for (let i = 0; i < 2 + Math.floor(Math.random() * 5); i++) { const o = tone(f * (1 + (i % 2) * 0.25), t + i * 0.09, 0.05, 0.016, 'sine', out, pn2); o.frequency.exponentialRampToValueAtTime(f * 1.5, t + i * 0.09 + 0.05); } }
       // drips on the metal roof of the add-on
       if (rain > 0.05 && t > dripNext) { dripNext = t + 0.03 + Math.random() * 0.3 / (rain + 0.1); tone(1800 + Math.random() * 2600, t, 0.05, 0.012 * rain, 'sine', out, pan(Ax0 + 20)); }
       // traffic voices
@@ -1244,6 +1292,7 @@
     who: () => people.map(p => `${p.name}:${p.act}:${p.zone}${p.route.length ? '~' : ''}`).join(' '),
     dbg: n => { const p = people.find(q => q.name === n); return JSON.stringify({ x: p.x, y: p.y, zone: p.zone, f: p.f, act: p.act, unit: p.unit && p.unit.key, route: p.route, spot: p.spot && { zone: p.spot.zone, x: p.spot.x, y: p.spot.y, f: p.spot.f }, wr: p.waitRide, away: p.away }); },
     tdbg: () => truck ? JSON.stringify({ x: Math.round(truck.x), v: truck.v.toFixed(1), at: truck.atStop, w: truck.wait.toFixed(1), done: truck.done, ahead: cars.filter(c => c.lane === 2 && c.kind !== 'scooter' && c !== truck && c.x > truck.x).map(c => c.kind + '@' + Math.round(c.x) + ':' + c.v.toFixed(1) + (c.atStop ? 'S' : '') + (c.ride ? c.ride.name : '')).join(','), waiting: people.filter(p => p.override && p.override.act === 'trash').map(p => p.name + ':' + p.zone + ':' + p.route.length + (p.override.tossed ? 'T' : '')).join(',') }) : '',
+    quake: () => { nextQuake = now(); }, cut: () => { rain = rainT = 1; lastCut = -999; cut = 25; lastCut = rt; }, PW: () => PW,
     drama: () => { drama = { ph: 'argue', t: 0, k: -1 }; }, bday: () => JSON.stringify(bday), bub: () => people.filter(p => p.bub && rt - p.bub.t < p.bub.d).map(p => p.name + ':' + p.bub.icon).join(' '),
     setRain: v => { rain = rainT = v; nextWx = now() + 120; }, cars: () => cars.length, peds: () => peds.length, snd, truck: () => !!truck
   };
