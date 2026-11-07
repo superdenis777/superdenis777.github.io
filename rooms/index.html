@@ -531,7 +531,7 @@
     const gt = by('gtr'), mw = by('mei'), night = Math.floor((m - 360) / 1440);
     const gOnRoof = gt.zone === 'roof' && !gt.away && (gt.act === 'guitar' || gt.act === 'moon');
     if (roofNight !== night && gOnRoof && !gt.route.length && gt.act === 'guitar' && mw.act === 'desk' && !mw.route.length && !mw.away && !mw.override && rain < 0.1 && (md > T(22, 35) || md < T(0, 35)) && rand() < dt * 0.012) {
-      roofNight = night; if (rand() < 0.75) { mw.override = { act: 'roofvisit', stage: Math.min(romance, 2), until: m + [6, 10, 300][Math.min(romance, 2)], hi: false }; romance++; }
+      roofNight = night; if (rand() < 0.75) { mw.override = { act: 'roofvisit', stage: Math.min(romance, 2), until: m + [6, 10, 300][Math.min(romance, 2)], hi: false }; romance++; save(); }
     }
     const ov = mw.override;
     if (ov && (ov.act === 'roofvisit' || ov.act === 'roofmoon')) {
@@ -999,7 +999,8 @@
     if (md > T(17, 30) || md < T(5, 30)) {
       const u = ((md - T(17, 30) + 1440) % 1440) / (12 * 60), mx = Math.round(AW * (0.12 + 0.76 * u)), my = Math.round(26 + 40 * Math.pow(2 * u - 1, 2) + (port ? 20 : 0));
       const ma = sm(0, 0.06, u) * (1 - sm(0.94, 1, u)) * (1 - rain * 0.85);
-      if (ma > 0.02) { g.globalCompositeOperation = 'lighter'; gl(g, mx, my, 26, '200,210,255', 0.35 * ma); g.globalCompositeOperation = 'source-over'; g.globalAlpha = ma; for (let yy = -5; yy <= 5; yy++) for (let xx = -5; xx <= 5; xx++) { const r2 = xx * xx + yy * yy; if (r2 > 27) continue; const lit = (xx + 2) * (xx + 2) + yy * yy < 27 + 6; g.fillStyle = lit ? ((xx * 3 + yy * 5) % 7 === 0 ? '#e0dcc8' : '#f6f2e0') : '#3a3c50'; g.fillRect(mx + xx, my + yy, 1, 1); } g.globalAlpha = 1; }
+      const age = (((Math.floor((now() - 720) / 1440) - 4) / 29.5 + 0.38) % 1 + 1) % 1, full = 1 - Math.abs(2 * age - 1), off = age < 0.5 ? -10.4 * age * 2 : 10.4 * (2 - 2 * age);
+      if (ma > 0.02) { g.globalCompositeOperation = 'lighter'; gl(g, mx, my, 26, '200,210,255', 0.35 * ma * (0.15 + 0.85 * full)); g.globalCompositeOperation = 'source-over'; g.globalAlpha = ma; for (let yy = -5; yy <= 5; yy++) for (let xx = -5; xx <= 5; xx++) { const r2 = xx * xx + yy * yy; if (r2 > 27) continue; const lit = (xx - off) * (xx - off) + yy * yy > 27; g.fillStyle = lit ? ((xx * 3 + yy * 5) % 7 === 0 ? '#e0dcc8' : '#f6f2e0') : '#3a3c50'; g.fillRect(mx + xx, my + yy, 1, 1); } g.globalAlpha = 1; }
     }
     // the sun going down behind the hills
     if (md > T(16, 20) && md < T(17, 25) && rain < 0.5) { const u = (md - T(16, 20)) / 65, sx = Math.round(AW * 0.82), sy = Math.round(lerp(ST - 250, ST - 205, u)); g.globalCompositeOperation = 'lighter'; gl(g, sx, sy, 40, '255,170,90', 0.6 * (1 - u * 0.5)); g.globalCompositeOperation = 'source-over'; disc(g, sx, sy, 6, '#ffd890'); }
@@ -1318,6 +1319,23 @@
   })();
 
   // ---------- run ----------
+  // The first visit opens on Friday at dusk; after that the building's clock keeps running on real time, page open or not.
+  const KEY = 'rooms-xizhi-v1';
+  let born = Date.now();
+  try { const sv = JSON.parse(localStorage.getItem(KEY) || 'null'); if (sv && sv.born && sv.born <= Date.now()) { born = sv.born; romance = sv.romance || 0; } else localStorage.setItem(KEY, JSON.stringify({ born, romance: 0 })); } catch (e) { /* private window: start fresh every time */ }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify({ born, romance })); } catch (e) { /* fine */ } }
+  rt = Math.max(0, (Date.now() - born) / 1000);
+  if (rt > 5) { nextWx = now() + 10 + rand() * 60; nextQuake = now() + 120 + rand() * 900; const r = rand(); rain = rainT = r < 0.5 ? 0 : r < 0.75 ? 0.3 : 0.6; wet = rain > 0 ? 1 : 0; }
+  function jumpTo(t) {
+    if (t <= rt + 2) return;
+    rt = t; cars = []; peds = []; parts = []; truck = null; delivery = null; drama = null; bday = null; recycler = null; quake = 0; cut = 0; PW = 1; laundryOut = false;
+    for (const k in units) units[k].cake = 0;
+    for (const p of people) { p.override = null; p.waitRide = false; p.ride = null; p.pause = 0; p.route = []; p.bub = null; placeAt(p, desired(p)); }
+    nextWx = now() + 10 + rand() * 60; nextQuake = Math.max(nextQuake, now() + 120 + rand() * 600); mochi.x = mochi.tx = Bx0 + 20;
+  }
+  let hiddenAt = 0;
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { hiddenAt = Date.now(); save(); } else if (hiddenAt) { hiddenAt = 0; jumpTo((Date.now() - born) / 1000); } });
+  addEventListener('pagehide', save);
   layout(); makePeople();
   addEventListener('resize', () => {
     layout(); cars = []; peds = []; parts = []; truck = null;
@@ -1343,6 +1361,7 @@
     dbg: n => { const p = people.find(q => q.name === n); return JSON.stringify({ x: p.x, y: p.y, zone: p.zone, f: p.f, act: p.act, unit: p.unit && p.unit.key, route: p.route, spot: p.spot && { zone: p.spot.zone, x: p.spot.x, y: p.spot.y, f: p.spot.f }, wr: p.waitRide, away: p.away }); },
     tdbg: () => truck ? JSON.stringify({ x: Math.round(truck.x), v: truck.v.toFixed(1), at: truck.atStop, w: truck.wait.toFixed(1), done: truck.done, ahead: cars.filter(c => c.lane === 2 && c.kind !== 'scooter' && c !== truck && c.x > truck.x).map(c => c.kind + '@' + Math.round(c.x) + ':' + c.v.toFixed(1) + (c.atStop ? 'S' : '') + (c.ride ? c.ride.name : '')).join(','), waiting: people.filter(p => p.override && p.override.act === 'trash').map(p => p.name + ':' + p.zone + ':' + p.route.length + (p.override.tossed ? 'T' : '')).join(',') }) : '',
     roof: st => { const mw = people.find(q => q.name === 'mei'); romance = st + 1; mw.override = { act: 'roofvisit', stage: st, until: now() + [6, 10, 300][st], hi: false }; }, gtr: () => window.__rm.dbg('gtr'), recycler: () => !!recycler,
+    jump: secs => jumpTo(rt + secs), born: () => born,
     quake: () => { nextQuake = now(); }, cut: () => { rain = rainT = 1; lastCut = -999; cut = 25; lastCut = rt; }, PW: () => PW,
     drama: () => { drama = { ph: 'argue', t: 0, k: -1 }; }, bday: () => JSON.stringify(bday), bub: () => people.filter(p => p.bub && rt - p.bub.t < p.bub.d).map(p => p.name + ':' + p.bub.icon).join(' '),
     setRain: v => { rain = rainT = v; nextWx = now() + 120; }, cars: () => cars.length, peds: () => peds.length, snd, truck: () => !!truck
