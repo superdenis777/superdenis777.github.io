@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Uncarved · Tao Te Ching</title>
+<meta name="description" content="The Tao Te Ching as a stone globe you can turn, hold and ask. Wang Bi's text, a new English translation, the oldest manuscripts side by side, and a chapter-by-chapter commentary.">
+<meta name="theme-color" content="#060709">
+<meta name="color-scheme" content="dark">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<meta property="og:title" content="Uncarved · Tao Te Ching">
+<meta property="og:description" content="The Tao Te Ching as a stone globe you can turn, hold and ask.">
+<meta property="og:image" content="https://superdenis777.github.io/uncarved/icons/og.png">
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="globe.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<canvas id="gl" tabindex="0" role="img" aria-label="The Tao Te Ching as one globe of raised characters, chapter 1 at the north pole to 81 at the south. Turn it with a finger. Let it rest and it reads to you. Hold it to gather the characters. Shake it to ask the Way."></canvas>
+<canvas id="ov" aria-hidden="true"></canvas>
+<div class="low" id="where" aria-hidden="true"></div>
+<div id="title" aria-hidden="true"><i class="seal">樸</i><b>UNCARVED</b><span class="zh">老子 · 道德經</span><span class="en">Laozi · Tao Te Ching</span></div>
+<div id="wit" aria-live="polite"></div>
+<div class="low" id="hint">turn it with a finger · let go, and it reads</div>
+<div id="info" aria-live="polite"><div class="big" id="iBig"></div><div class="tx"><div class="py" id="iPy"></div><div class="gl" id="iGl"></div><div class="ct" id="iCt"></div></div></div>
+<div class="sr" id="live" aria-live="polite"></div>
+<div id="fallback">This needs WebGL 2, which this browser doesn't offer.</div>
+
+<nav id="top">
+  <button class="icon" id="bLib" aria-label="Chapters and more"><i class="seal">樸</i></button>
+  <button class="icon" id="bAsk" aria-label="Ask the Way"><i class="ask">問</i></button>
+</nav>
+
+<div id="oracle" class="card" aria-live="polite"></div>
+
+<section id="lib" class="drawer" aria-hidden="true"><div class="scrim"></div><div class="panel" role="dialog" aria-label="Library"></div></section>
+<section id="sheet" class="sheet" aria-hidden="true"><div class="sheetIn" role="dialog"></div></section>
+<div id="gloss" class="card"></div>
+
+<script src="data.js"></script>
+<script src="globe.js"></script>
+<script src="commentary.js" defer></script>
+<script src="app.js" defer></script>
+</body>
+</html>

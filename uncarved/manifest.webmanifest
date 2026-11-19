@@ -1,0 +1,17 @@
+{
+  "name": "Uncarved · Tao Te Ching",
+  "short_name": "Uncarved",
+  "description": "The Tao Te Ching as a stone globe you can turn, hold and ask: Wang Bi's text, a new English translation, the oldest manuscripts side by side, and a commentary on every chapter.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "background_color": "#060709",
+  "theme_color": "#060709",
+  "categories": ["books", "education", "lifestyle"],
+  "icons": [
+    {"src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png"},
+    {"src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}
