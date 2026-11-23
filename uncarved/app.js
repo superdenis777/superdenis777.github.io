@@ -100,16 +100,11 @@ function chapterHTML(k){
   ps.forEach((p,s)=>{
     let gi=p.a,z="";
     for(const c of p.zh){if(HAN.test(c)){const r=S.pinyin?`<rt>${esc(py[gi]||"")}</rt>`:"";z+=`<ruby class="c" data-g="${gi}">${c}${r}</ruby>`;gi++;}else if(c.trim())z+=`<span class="p">${esc(c)}</span>`;}
-    h+=`<div class="pass" id="p-${s}"><div class="zh">${z}</div><div class="en">${esc(p.en).replace(/\n/g,"<br>")}</div></div>`;
+    h+=`<div class="pass" id="p-${s}"><div class="zh">${z}</div><div class="en">${esc(p.en).replace(/\n/g,"<br>")}</div><button class="exb" data-x="exam" data-s="${s}"><b>釋</b> examine</button></div>`;
   });
   // the other editions
   let ed="";
-  ps.forEach((p,s)=>{const rows=D.WIT[k+"."+s];if(!rows)return;
-    ed+=`<div class="blk"><div class="wr"><span>Wang Bi</span><span class="t" style="color:var(--bone)">${esc(p.zh.replace(/[，。；：？！、「」（）]/g,""))}</span></div>`;
-    for(const [e,t,m,o] of rows){const om=new Set(o);let z="";[...t].forEach((c,j)=>{if(om.has(j))z+="<u>·</u>";z+=c==="□"?"<i>□</i>":m[j]==="1"?"<b>"+esc(c)+"</b>":esc(c);});
-      ed+=`<div class="wr"><span>${D.WED[e]}</span><span class="t">${z}</span></div>`;}
-    const nt=D.WNOTE[k+"."+s];if(nt)ed+=`<div class="nt">${esc(nt)}</div>`;
-    ed+="</div>";});
+  ps.forEach((p,s)=>{ed+=edBlock(k,s,p,false);});
   h+=`<h3 class="sec" id="sec-editions">Other editions</h3><div class="eds">${ed||'<p class="note" style="text-align:center">Every edition reads these lines the same way.</p>'}<p class="note">Red: where an edition reads differently from Wang Bi. □: lost from the silk. A red dot: a word Wang Bi has that this edition lacks.</p></div>`;
   // the commentary
   if(cm.ex){
@@ -124,6 +119,52 @@ function chapterHTML(k){
   <p class="note" style="text-align:center;margin-top:30px">Wang Bi’s text · English translation and commentary made with Claude · <a href="#" data-x="book" style="color:var(--muted)">about this edition</a></p></div>`;
   return h;
 }
+function edBlock(k,s,p,full){
+  const rows=D.WIT[k+"."+s];if(!rows)return "";
+  let ed=`<div class="blk"><div class="wr"><span>Wang Bi</span><span class="t" style="color:var(--bone)">${esc(p.zh.replace(/[，。；：？！、「」（）]/g,""))}</span></div>`;
+  for(const [e,t,m,o] of rows){const om=new Set(o);let z="";[...t].forEach((c,j)=>{if(om.has(j))z+="<u>·</u>";z+=c==="□"?"<i>□</i>":m[j]==="1"?"<b>"+esc(c)+"</b>":esc(c);});
+    ed+=`<div class="wr"><span>${D.WED[e]}</span><span class="t">${z}</span></div>`;}
+  const X=window.DDJ_EXAM||{},vn=full&&X.var?X.var[k+"."+s]:null;
+  if(vn&&vn.length)ed+=vn.map(x=>`<div class="nt">${zhWrap(x)}</div>`).join("");
+  else{const nt=D.WNOTE[k+"."+s];if(nt)ed+=`<div class="nt">${zhWrap(nt)}</div>`;}
+  return ed+"</div>";
+}
+// ---------- one passage, examined ----------
+let curS=0;
+const SECN={ex:"What the characters say",an:"How it is built",di:"What is at stake"};
+function openExamine(k,s){curK=k;curS=s;openPanel("sheet",()=>renderExamine(k,s));$("sheet").querySelector(".sheetIn").scrollTop=0;}
+function examineHTML(k,s){
+  const i=k-1,ps=passages(i),p=ps[s]||ps[0],py=D.PY[i],[tz,te]=D.TITLES[i],X=window.DDJ_EXAM||{wb:{},var:{},para:{},nowb:{}},key=k+"."+s,cm=C().ch[k]||{};
+  let h=`<div class="hdr"><button data-x="close" aria-label="Close">✕</button><span class="mid">第${cn(k)}章 · ${s+1}/${ps.length}</span><span><button data-x="pprev" aria-label="Previous passage">‹</button><button data-x="pnext" aria-label="Next passage">›</button></span></div><div class="page exam">
+  <div class="ehero"><span class="num">${k}</span><span class="zh">${esc(tz)}</span><span class="en">${esc(te)}</span></div>`;
+  let gi=p.a,z="";
+  for(const c of p.zh){if(HAN.test(c)){const r=S.pinyin?`<rt>${esc(py[gi]||"")}</rt>`:"";z+=`<ruby class="c" data-g="${gi}">${c}${r}</ruby>`;gi++;}else if(c.trim())z+=`<span class="p">${esc(c)}</span>`;}
+  h+=`<div class="pass"><div class="zh">${z}</div><div class="en">${esc(p.en).replace(/\n/g,"<br>")}</div></div>`;
+  // Wang Bi
+  const wb=X.wb[key]||[];
+  h+=`<h3 class="sec">Wang Bi’s notes</h3>`;
+  if(wb.length){
+    h+=`<p class="note ctr">Wang Bi (226–249) wrote these notes between the lines of the text. Chinese from the same Daozang print as the text above; English made for this edition.</p>`;
+    h+=wb.map(([lem,zh,en])=>`<div class="wbn">${lem?`<div class="lem">${esc(lem)}</div>`:""}<div class="z">${esc(zh)}</div><div class="e">${zhWrap(en||"")}</div></div>`).join("");
+  }else if(X.wbnext&&X.wbnext[key]){const t=+X.wbnext[key].split(".")[1];h+=`<p class="note ctr">Wang Bi comments on these lines together with the lines that follow.</p><div class="acts"><button class="pill" data-x="pgo" data-s="${t}">Wang Bi on passage ${t+1} ›</button></div>`;}
+  else h+=`<p class="note ctr">${zhWrap((X.nowb&&X.nowb[k])||"Wang Bi has no note on these lines.")}</p>`;
+  // other editions
+  const ed=edBlock(k,s,p,true);
+  h+=`<h3 class="sec">Other editions</h3><div class="eds">${ed||'<p class="note ctr">Every edition reads these lines the same way.</p>'}${ed?'<p class="note">Red: where an edition reads differently from Wang Bi. □: lost from the silk. A red dot: a word Wang Bi has that this edition lacks. ﹦: the silk’s mark for “repeat the word”. The silk often writes one character for another of similar sound (聲 for 聖, 胃 for 謂, 亓 for 其, 恆 for 常); it has 邦, “state”, where later copies have 國, after the Han founder Liu Bang made 邦 taboo. The notes mention such spellings only when the meaning changes.</p>':""}</div>`;
+  // the commentary on these lines
+  const pr=X.para[key]||[];
+  if(pr.length){
+    h+=`<h3 class="sec">From the commentary</h3><div class="comm">`;
+    let last="";for(const [sec,j] of pr){const t=(cm[sec]||[])[j];if(!t)continue;if(sec!==last){h+=`<h4>${SECN[sec]}</h4>`;last=sec;}h+=`<p>${zhWrap(t)}</p>`;}
+    h+=`</div>`;
+  }
+  h+=`<div class="acts" style="margin-top:34px"><button class="pill red" data-x="chapter">The whole chapter</button><button class="pill" data-x="globeP">Read it on the stone</button></div>
+  <p class="note" style="text-align:center;margin-top:30px">Wang Bi’s text and notes · English translation and commentary made with Claude · <a href="#" data-x="book" style="color:var(--muted)">about this edition</a></p></div>`;
+  return h;
+}
+function renderExamine(k,s){curK=k;curS=s;const sh=$("sheet").querySelector(".sheetIn");sh.innerHTML=examineHTML(k,s);sh.setAttribute("aria-label","Chapter "+k+", passage "+(s+1));}
+function stepPassage(d){let k=curK,s=curS+d;const n=passages(k-1).length;if(s<0){k=k>1?k-1:81;s=passages(k-1).length-1;}else if(s>=n){k=k<81?k+1:1;s=0;}renderExamine(k,s);$("sheet").querySelector(".sheetIn").scrollTop=0;}
+window.addEventListener("globe:examine",e=>openExamine(e.detail.k,e.detail.s));
 function renderChapter(k){const sh=$("sheet").querySelector(".sheetIn");sh.innerHTML=chapterHTML(k);sh.setAttribute("aria-label","Chapter "+k);}
 $("sheet").addEventListener("click",e=>{
   const c=e.target.closest(".c");if(c){showGloss(+c.dataset.g,c);return;}
@@ -133,6 +174,11 @@ $("sheet").addEventListener("click",e=>{
   else if(x==="prev"||x==="next"){curK=x==="prev"?(curK>1?curK-1:81):(curK<81?curK+1:1);renderChapter(curK);$("sheet").querySelector(".sheetIn").scrollTop=0;}
   else if(x==="globe"){const k=curK;closeTop(false);setTimeout(()=>{G.goto&&G.goto(k,0);},350);}
   else if(x==="share")shareCard(curK,0);
+  else if(x==="exam"){renderExamine(curK,+b.dataset.s);$("sheet").querySelector(".sheetIn").scrollTop=0;}
+  else if(x==="pprev"||x==="pnext")stepPassage(x==="pprev"?-1:1);
+  else if(x==="pgo"){renderExamine(curK,+b.dataset.s);$("sheet").querySelector(".sheetIn").scrollTop=0;}
+  else if(x==="chapter"){renderChapter(curK);const sh=$("sheet").querySelector(".sheetIn");sh.scrollTop=0;setTimeout(()=>{const el=sh.querySelector("#p-"+curS);if(el&&curS)el.scrollIntoView();},30);}
+  else if(x==="globeP"){const k=curK,s=curS;closeTop(false);setTimeout(()=>{G.goto&&G.goto(k,s);},350);}
   else if(x==="book"){renderPage("book");$("sheet").querySelector(".sheetIn").scrollTop=0;}
   else if(x==="intro"||x==="settings"){renderPage(x);}
 });
@@ -167,6 +213,7 @@ function renderPage(p){
       <div><b>觸</b><span><em>Touch a character</em>Its sound and meaning. Touch the stone and a ripple runs through the text.</span></div>
       <div><b>聚</b><span><em>Hold it</em>Press and hold. The characters gather round your finger like iron filings. Drag them. Let go and they fall back into place.</span></div>
       <div><b>問</b><span><em>Ask the Way</em>Hold a question in mind, then shake the phone or press 問. The stone spins and lands on a passage. People have read this book that way for two thousand years.</span></div>
+      <div><b>釋</b><span><em>Examine a passage</em>Touch 釋 under a passage, on the stone or on a chapter page: Wang Bi’s own notes in Chinese and English, what the oldest editions change, and the commentary on those lines.</span></div>
       <div><b>章</b><span><em>Open a chapter</em>Touch the chapter’s name while it reads, or open the library with 樸: the text with pinyin, the oldest manuscripts beside it, and a commentary on every chapter.</span></div>
     </div>`;
   }else if(p==="book"){
@@ -199,12 +246,12 @@ window.addEventListener("globe:openChapter",e=>openChapter(e.detail.k,e.detail.s
 window.addEventListener("globe:shake",()=>toast("You asked the Way."));
 function showCard(k,s){
   const o=$("oracle"),[zh,en]=D.TITLES[k-1];
-  o.innerHTML=`<div class="k">第${cn(k)}章 · ${esc(zh)}</div><div class="t">${esc(en)}</div><div class="row"><button class="pill red" data-o="read">Read the chapter</button><button class="pill" data-o="share">Share</button><button class="pill" data-o="again">Ask again</button></div>`;
+  o.innerHTML=`<div class="k">第${cn(k)}章 · ${esc(zh)}</div><div class="t">${esc(en)}</div><div class="row"><button class="pill red" data-o="exam">Examine</button><button class="pill" data-o="read">Chapter</button><button class="pill" data-o="share">Share</button><button class="pill" data-o="again">Again</button></div>`;
   o.dataset.k=k;o.dataset.s=s;o.classList.add("on");
 }
 function hideCard(){$("oracle").classList.remove("on");}
 $("oracle").addEventListener("click",e=>{const b=e.target.closest("[data-o]");if(!b)return;const o=$("oracle"),k=+o.dataset.k,s=+o.dataset.s;
-  if(b.dataset.o==="read"){hideCard();openChapter(k);}else if(b.dataset.o==="share")shareCard(k,s);else{hideCard();ask();}});
+  if(b.dataset.o==="exam"){hideCard();openExamine(k,s);}else if(b.dataset.o==="read"){hideCard();openChapter(k);}else if(b.dataset.o==="share")shareCard(k,s);else{hideCard();ask();}});
 let tT=0;function toast(t){let el=document.querySelector(".toast");if(!el){el=document.createElement("div");el.className="toast";document.body.appendChild(el);}el.textContent=t;el.classList.add("on");clearTimeout(tT);tT=setTimeout(()=>el.classList.remove("on"),2200);}
 
 // ---------- a card to share ----------

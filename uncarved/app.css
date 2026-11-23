@@ -24,7 +24,8 @@ body.covered #top{opacity:0;pointer-events:none}
 
 /* the square of other editions: a door into the chapter */
 #wit.on{pointer-events:auto;cursor:pointer}
-#wit .more{margin-top:6px;font:italic 400 13px/1 var(--disp);letter-spacing:.06em;color:var(--gold);opacity:.8;text-align:right}
+#wit .more{margin-top:8px;font:italic 400 14px/1 var(--disp);letter-spacing:.06em;color:var(--gold);opacity:.9;text-align:right}
+#wit .more b{font:700 13px/1 var(--tc);font-style:normal;display:inline-block;border:1px solid rgba(214,177,106,.55);border-radius:50%;width:22px;height:22px;line-height:21px;text-align:center;margin-right:4px}
 
 /* cards along the bottom */
 .card{position:fixed;left:50%;bottom:calc(var(--sab) + 14px);width:min(560px,calc(100% - 20px));transform:translate(-50%,24px);opacity:0;pointer-events:none;z-index:25;
@@ -134,3 +135,20 @@ table.chg td.zhi{font-family:var(--tc)}
 .toast{position:fixed;left:50%;top:calc(var(--sat) + 70px);transform:translate(-50%,-10px);opacity:0;transition:all .4s;z-index:50;font:italic 400 17px/1.3 var(--disp);color:var(--bone);background:rgba(10,11,14,.9);border:1px solid var(--line);padding:10px 16px;border-radius:999px;pointer-events:none}
 .toast.on{opacity:1;transform:translate(-50%,0)}
 @media (max-width:420px){.hero .num{font-size:54px}.hero .zh{font-size:26px}.pass .zh{font-size:1.5em}.eds .wr{grid-template-columns:70px 1fr}}
+
+.exb{display:block;margin:14px auto 0;border:1px solid var(--line);background:transparent;border-radius:999px;padding:7px 16px 7px 8px;font:italic 400 14px/1 var(--disp);letter-spacing:.06em;color:var(--gold);cursor:pointer}
+.exb b{font:700 12px/1 var(--tc);font-style:normal;display:inline-block;border:1px solid rgba(214,177,106,.55);border-radius:50%;width:22px;height:22px;line-height:21px;text-align:center;margin-right:6px}
+.exam .ehero{display:flex;gap:12px;align-items:baseline;justify-content:center;flex-wrap:wrap;margin:6px 0 22px}
+.exam .ehero .num{font:300 1.6em/1 var(--disp);color:var(--red2)}
+.exam .ehero .zh{font:700 1.05em/1 var(--tc);letter-spacing:.2em;color:var(--bone)}
+.exam .ehero .en{font:italic 400 1.05em/1 var(--disp);color:var(--bone2)}
+.note.ctr{text-align:center;max-width:520px;margin-left:auto;margin-right:auto}
+.wbn{margin:0 auto 22px;max-width:620px;padding:0 0 18px;border-bottom:1px solid var(--line)}
+.wbn .lem{font:700 .95em/1.6 var(--tc);color:var(--muted);letter-spacing:.06em;margin-bottom:4px}
+.wbn .z{font:400 1.06em/1.75 var(--tc);color:#cfc6b2;letter-spacing:.04em}
+.wbn .e{font:400 .98em/1.62 var(--lat);color:var(--bone2);margin-top:8px}
+.wbn .e .zhi{font-family:var(--tc)}
+
+#oracle .row{flex-wrap:nowrap}
+#oracle .row .pill{padding:9px 12px;letter-spacing:.03em;white-space:nowrap}
+@media (max-width:360px){#oracle .row .pill{padding:8px 9px;font-size:14px}}

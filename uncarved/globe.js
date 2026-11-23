@@ -475,7 +475,7 @@ function layout(S){
 }
 function witFill(k,s){
   const rows=WIT[(k+1)+"."+s],note=WNOTE[(k+1)+"."+s],el=$("wit");
-  if(!rows){el.innerHTML="";return null;}
+  if(!rows){el.innerHTML=`<div class="more"><b>釋</b> examine this passage ›</div>`;return{tot:0,lit:0,h:el.offsetHeight+18};}
   let tot=0,lit=0,h='<div class="hd">these lines in other editions</div>';
   for(const[e,t,m,o]of rows){
     const om=new Set(o);let z="";const cs=[...t];
@@ -483,7 +483,7 @@ function witFill(k,s){
     tot+=cs.length;h+=`<div class="r"><span class="ed">${WED[e]}</span><span class="zh">${z}</span></div>`;
   }
   if(note)h+=`<div class="nt">${esc(note)}</div>`;
-  h+=`<div class="more">compare all editions ›</div>`;
+  h+=`<div class="more"><b>釋</b> examine this passage ›</div>`;
   const narrow=VW.W<480;el.style.setProperty("--wz",((tot>160?13:tot>100?14.5:16)-(narrow&&tot>60?1:0))+"px");
   el.innerHTML=h;
   return{tot,lit,h:el.offsetHeight+18};
@@ -903,7 +903,7 @@ window.Globe={
   set(o){if("sound" in o)audio.mute(!o.sound);if("haptics" in o)HAPTIC_ON=!!o.haptics;if("autoRead" in o)R.autoRead=!!o.autoRead;},
   unlock(){audio.ensure();haptic.arm();}
 };
-$("wit").addEventListener("click",()=>{const S=R.cur;if(S)emit("openChapter",{k:S.k+1,s:S.s,section:"editions"});});
+$("wit").addEventListener("click",()=>{const S=R.cur;if(S)emit("examine",{k:S.k+1,s:S.s});});
 
 // ---------- start ----------
 canvas.addEventListener("webglcontextlost",e=>{e.preventDefault();},false);
